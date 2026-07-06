@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wago2HAddon",
+        "description": "Bridge to a Wago 750-881 PLC running the Calaos Codesys program.",
+        "data": {
+          "host": "PLC IP address",
+          "modbus_port": "Modbus/TCP port",
+          "udp_port": "Calaos UDP port",
+          "calaos_xml_path": "Path to the Calaos io.xml (optional)",
+          "local_ip": "Local IP for the heartbeat (optional, auto-detected)",
+          "scan_interval": "Analog/temperature polling interval (s)",
+          "heartbeat_interval": "Heartbeat interval (s)",
+          "wago_841": "PLC is 750-8xx family (750-881)",
+          "multi_click_ms": "Max delay between clicks (ms)",
+          "long_press_ms": "Long-press threshold (ms)"
+        }
+      }
+    },
+    "error": { "xml_not_found": "The io.xml file was not found at this path." },
+    "abort": { "already_configured": "This PLC is already configured." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wago2HAddon settings",
+        "data": {
+          "host": "PLC IP address",
+          "modbus_port": "Modbus/TCP port",
+          "udp_port": "Calaos UDP port",
+          "calaos_xml_path": "Path to the Calaos io.xml (optional)",
+          "local_ip": "Local IP for the heartbeat (optional, auto-detected)",
+          "scan_interval": "Analog/temperature polling interval (s)",
+          "heartbeat_interval": "Heartbeat interval (s)",
+          "wago_841": "PLC is 750-8xx family (750-881)",
+          "multi_click_ms": "Max delay between clicks (ms)",
+          "long_press_ms": "Long-press threshold (ms)"
+        }
+      }
+    },
+    "error": { "xml_not_found": "The io.xml file was not found at this path." }
+  },
+  "entity": {
+    "event": {
+      "button": {
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single_click": "Single click",
+              "double_click": "Double click",
+              "triple_click": "Triple click",
+              "long_press": "Long press",
+              "press": "Press",
+              "release": "Release"
+            }
+          }
+        }
+      }
+    }
+  }
+}

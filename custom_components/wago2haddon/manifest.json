@@ -1,0 +1,13 @@
+{
+  "domain": "wago2haddon",
+  "name": "Wago2HAddon (Calaos Wago bridge)",
+  "version": "1.0.0",
+  "documentation": "https://github.com/yourname/Wago2HAddon",
+  "issue_tracker": "https://github.com/yourname/Wago2HAddon/issues",
+  "codeowners": ["@yourname"],
+  "config_flow": true,
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "dependencies": [],
+  "requirements": []
+}
