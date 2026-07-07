@@ -72,7 +72,8 @@ class WagoHub:
         self.host = host
         self.udp_port = udp_port
         self.heartbeat_interval = heartbeat_interval
-        self.local_ip = local_ip or detect_local_ip(host)
+        self.local_ip = local_ip or None
+        self._auto_detect_local_ip = local_ip is None
 
         self._modbus = ModbusTcpClient(host, modbus_port, slave=MODBUS_SLAVE_ID)
         self._udp_transport: asyncio.DatagramTransport | None = None
@@ -99,6 +100,11 @@ class WagoHub:
     # -- lifecycle ------------------------------------------------------------
     async def async_setup(self) -> None:
         """Open sockets, start heartbeat. Never raises on PLC being offline."""
+        if self._auto_detect_local_ip:
+            self.local_ip = await self.hass.async_add_executor_job(
+                detect_local_ip, self.host
+            )
+
         with contextlib.suppress(ModbusError):
             await self._modbus.connect()
             self.available = True
