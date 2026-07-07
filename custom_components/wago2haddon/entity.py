@@ -1,7 +1,7 @@
 """Base entity for Wago2HAddon."""
 from __future__ import annotations
 
-from homeassistant.helpers.device_info import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
