@@ -30,6 +30,11 @@ natives Home Assistant.
 - **Suspension du programme interne** : tant que la passerelle tourne, un *heartbeat*
   périodique maintient l'automate en « mode serveur », ce qui **suspend** son
   programme autonome (`ManageOutput`). Voir plus bas.
+- **Diagnostic de l'automate** : deux entités de diagnostic sont créées automatiquement
+  pour chaque automate — un `binary_sensor` de **connectivité En ligne/Hors ligne**
+  (sondé en Modbus toutes les 30 s) et un `sensor` affichant la **version du programme
+  Calaos** installé sur le Wago (commande `WAGO_GET_VERSION`). La version apparaît aussi
+  directement sur la page de l'appareil (champ « Version logicielle »).
 
 ## Installation via HACS
 
@@ -115,6 +120,7 @@ Communication sur **deux canaux** :
 | Changement d'entrée | PLC → HA | `WAGO INT <var> <0\|1>` |
 | Commande DALI | HA → PLC | `WAGO_DALI_SET <line> <group> <address> <dimm%> <fade>` |
 | Lecture DALI | HA ↔ PLC | `WAGO_DALI_GET <line> <address>` → `WAGO_DALI_GET <0\|1> <dimm%>` |
+| Version du programme | HA ↔ PLC | `WAGO_GET_VERSION` → `WAGO_GET_VERSION <H>.<L> 750-841` |
 
 ## Notes techniques
 
