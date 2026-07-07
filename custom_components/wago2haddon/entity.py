@@ -25,7 +25,7 @@ class WagoEntity(Entity):
         self._attr_name = name
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, hub.host)},
-            name=f"Wago PLC {hub.host}",
+            name=f"{hub.host}",
             manufacturer="Wago",
             model="750-881 (Calaos Codesys)",
             sw_version=hub.sw_version,
