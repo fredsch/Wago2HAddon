@@ -28,6 +28,7 @@ class WagoEntity(Entity):
             name=f"Wago PLC {hub.host}",
             manufacturer="Wago",
             model="750-881 (Calaos Codesys)",
+            sw_version=hub.sw_version,
             configuration_url=f"http://{hub.host}",
         )
 

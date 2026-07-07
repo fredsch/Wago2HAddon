@@ -13,8 +13,10 @@ from homeassistant.core import HomeAssistant, callback
 from .const import (
     CMD_DALI_GET,
     CMD_DALI_SET,
+    CMD_GET_VERSION,
     CMD_HEARTBEAT,
     CMD_SET_SERVER_IP,
+    DEFAULT_MONITOR_INTERVAL,
     MSG_INPUT_PREFIX,
     MODBUS_SLAVE_ID,
     OUTPUT_READBACK_OFFSET,
@@ -75,13 +77,22 @@ class WagoHub:
         self._modbus = ModbusTcpClient(host, modbus_port, slave=MODBUS_SLAVE_ID)
         self._udp_transport: asyncio.DatagramTransport | None = None
         self._heartbeat_task: asyncio.Task | None = None
+        self._monitor_task: asyncio.Task | None = None
 
         # var -> list of callbacks(state: bool) for input dispatch
         self._input_listeners: dict[int, list[Callable[[bool], None]]] = {}
 
+        # availability change subscribers (connectivity sensor, etc.)
+        self._availability_listeners: list[Callable[[bool], None]] = []
+
         # serialized DALI GET support
         self._dali_lock = asyncio.Lock()
         self._dali_pending: deque[asyncio.Future] = deque()
+
+        # version query support
+        self._version_lock = asyncio.Lock()
+        self._version_pending: deque[asyncio.Future] = deque()
+        self.sw_version: str | None = None
 
         self.available = False
 
@@ -113,16 +124,24 @@ class WagoHub:
                 self.udp_port,
             )
         self._heartbeat_task = loop.create_task(self._heartbeat_loop())
+        self._monitor_task = loop.create_task(self._monitor_loop())
+
+        # Best-effort: read the Calaos program version so it can be shown on the
+        # device page. Non-blocking beyond a short timeout.
+        if self.available:
+            self.sw_version = await self.get_version()
+
         _LOGGER.info(
-            "Wago hub %s ready (local_ip=%s, udp=%d)",
-            self.host, self.local_ip, self.udp_port,
+            "Wago hub %s ready (local_ip=%s, udp=%d, version=%s)",
+            self.host, self.local_ip, self.udp_port, self.sw_version,
         )
 
     async def async_shutdown(self) -> None:
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._heartbeat_task
+        for task in (self._heartbeat_task, self._monitor_task):
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         if self._udp_transport:
             self._udp_transport.close()
         await self._modbus.close()
@@ -138,6 +157,51 @@ class WagoHub:
             except Exception as err:  # noqa: BLE001 - never kill the loop
                 _LOGGER.debug("heartbeat send failed: %s", err)
             await asyncio.sleep(self.heartbeat_interval)
+
+    async def _monitor_loop(self) -> None:
+        """Probe the PLC over Modbus periodically to track Online/Offline."""
+        while True:
+            await asyncio.sleep(DEFAULT_MONITOR_INTERVAL)
+            try:
+                await self._modbus.connect()
+                # a cheap, side-effect-free read as a reachability probe
+                await self._modbus.read_coils(0, 1)
+                self._set_available(True)
+            except ModbusError:
+                self._set_available(False)
+
+    # -- availability ---------------------------------------------------------
+    @callback
+    def register_availability(
+        self, cb: Callable[[bool], None]
+    ) -> Callable[[], None]:
+        self._availability_listeners.append(cb)
+
+        def _unregister() -> None:
+            if cb in self._availability_listeners:
+                self._availability_listeners.remove(cb)
+
+        return _unregister
+
+    @callback
+    def _set_available(self, value: bool) -> None:
+        changed = value != self.available
+        self.available = value
+        if not changed:
+            return
+        for cb in list(self._availability_listeners):
+            try:
+                cb(value)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("availability listener failed")
+        # refresh the version whenever the PLC (re)appears
+        if value and self.sw_version is None:
+            self.hass.async_create_task(self._refresh_version())
+
+    async def _refresh_version(self) -> None:
+        version = await self.get_version()
+        if version:
+            self.sw_version = version
 
     # -- UDP ------------------------------------------------------------------
     def _udp_send(self, command: str) -> None:
@@ -159,6 +223,12 @@ class WagoHub:
                 except ValueError:
                     return
                 self._dispatch_input(var, state)
+        elif text.startswith(CMD_GET_VERSION):
+            # response "WAGO_GET_VERSION <H>.<L> <model>"
+            if self._version_pending:
+                fut = self._version_pending.popleft()
+                if not fut.done():
+                    fut.set_result(text)
         elif text.startswith(CMD_DALI_GET):
             # response "WAGO_DALI_GET <status 0/1> <dimm%>"
             if self._dali_pending:
@@ -198,11 +268,11 @@ class WagoHub:
         addr = var + (WAGO_841_START_ADDRESS if wago_841 else 0)
         try:
             await self._modbus.write_coil(addr, value)
-            self.available = True
+            self._set_available(True)
             return True
         except ModbusError as err:
             _LOGGER.warning("set_digital_output(%d)=%s failed: %s", var, value, err)
-            self.available = False
+            self._set_available(False)
             return False
 
     async def read_digital_output(self, var: int) -> bool | None:
@@ -250,4 +320,25 @@ class WagoHub:
                     return parts[1] != "0", int(parts[2])
                 except ValueError:
                     return None
+            return None
+
+    # -- version --------------------------------------------------------------
+    async def get_version(self, timeout: float = 3.0) -> str | None:
+        """Query the Calaos program version. Returns e.g. "2.3" or None."""
+        if self._udp_transport is None:
+            return None
+        async with self._version_lock:
+            fut: asyncio.Future = self.hass.loop.create_future()
+            self._version_pending.append(fut)
+            self._udp_send(CMD_GET_VERSION)
+            try:
+                text = await asyncio.wait_for(fut, timeout)
+            except asyncio.TimeoutError:
+                if fut in self._version_pending:
+                    self._version_pending.remove(fut)
+                return None
+            # "WAGO_GET_VERSION <H>.<L> <model>"
+            parts = text.split()
+            if len(parts) >= 2:
+                return parts[1]
             return None

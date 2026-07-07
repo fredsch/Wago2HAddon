@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
@@ -17,7 +17,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DOMAIN
 from .entity import WagoEntity
 from .hub import WagoHub
-from .models import AnalogInput
+from .models import AnalogInput, WagoIO
 
 
 async def async_setup_entry(
@@ -26,12 +26,52 @@ async def async_setup_entry(
     store = hass.data[DOMAIN][entry.entry_id]
     hub: WagoHub = store["hub"]
     scan = timedelta(seconds=store["scan_interval"])
-    entities = [
+    entities: list[SensorEntity] = [WagoVersionSensor(hub)]
+    entities += [
         WagoAnalogSensor(hub, io, scan)
         for io in store["devices"]
         if isinstance(io, AnalogInput)
     ]
     async_add_entities(entities)
+
+
+class WagoVersionSensor(WagoEntity, SensorEntity):
+    """Shows the Calaos program version reported by the PLC."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:chip"
+
+    def __init__(self, hub: WagoHub) -> None:
+        io = WagoIO(io_id="calaos_version", name="version Calaos",
+                    io_type="version", host=hub.host)
+        super().__init__(hub, io)
+        self._attr_name = f"Wago {hub.host} version Calaos"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str | None:
+        return self._hub.sw_version
+
+    async def async_added_to_hass(self) -> None:
+        # refresh once shortly after start and then hourly (cheap, UDP)
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._refresh_cb, timedelta(hours=1))
+        )
+        if self._hub.sw_version is None:
+            await self._refresh()
+
+    @callback
+    def _refresh_cb(self, _now) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        version = await self._hub.get_version()
+        if version and version != self._hub.sw_version:
+            self._hub.sw_version = version
+        self.async_write_ha_state()
 
 
 class WagoAnalogSensor(WagoEntity, SensorEntity):

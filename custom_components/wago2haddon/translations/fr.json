@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wago2HAddon",
+        "description": "Passerelle vers un automate Wago 750-881 équipé du programme Codesys Calaos.",
+        "data": {
+          "host": "Adresse IP de l'automate",
+          "modbus_port": "Port Modbus/TCP",
+          "udp_port": "Port UDP Calaos",
+          "calaos_xml_path": "Chemin du fichier Calaos io.xml (optionnel)",
+          "local_ip": "IP locale pour le heartbeat (optionnel, auto-détectée)",
+          "scan_interval": "Intervalle de lecture analogique/température (s)",
+          "heartbeat_interval": "Intervalle du heartbeat (s)",
+          "wago_841": "Automate de la famille 750-8xx (750-881)",
+          "multi_click_ms": "Délai max entre deux clics (ms)",
+          "long_press_ms": "Seuil du clic long (ms)"
+        }
+      }
+    },
+    "error": { "xml_not_found": "Le fichier io.xml est introuvable à ce chemin." },
+    "abort": { "already_configured": "Cet automate est déjà configuré." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Réglages Wago2HAddon",
+        "data": {
+          "host": "Adresse IP de l'automate",
+          "modbus_port": "Port Modbus/TCP",
+          "udp_port": "Port UDP Calaos",
+          "calaos_xml_path": "Chemin du fichier Calaos io.xml (optionnel)",
+          "local_ip": "IP locale pour le heartbeat (optionnel, auto-détectée)",
+          "scan_interval": "Intervalle de lecture analogique/température (s)",
+          "heartbeat_interval": "Intervalle du heartbeat (s)",
+          "wago_841": "Automate de la famille 750-8xx (750-881)",
+          "multi_click_ms": "Délai max entre deux clics (ms)",
+          "long_press_ms": "Seuil du clic long (ms)"
+        }
+      }
+    },
+    "error": { "xml_not_found": "Le fichier io.xml est introuvable à ce chemin." }
+  },
+  "entity": {
+    "event": {
+      "button": {
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single_click": "Clic simple",
+              "double_click": "Double clic",
+              "triple_click": "Triple clic",
+              "long_press": "Clic long",
+              "press": "Appui",
+              "release": "Relâchement"
+            }
+          }
+        }
+      }
+    }
+  }
+}

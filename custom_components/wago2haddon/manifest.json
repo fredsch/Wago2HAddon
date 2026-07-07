@@ -1,7 +1,7 @@
 {
   "domain": "wago2haddon",
   "name": "Wago2HAddon (Calaos Wago bridge)",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "documentation": "https://github.com/yourname/Wago2HAddon",
   "issue_tracker": "https://github.com/yourname/Wago2HAddon/issues",
   "codeowners": ["@yourname"],

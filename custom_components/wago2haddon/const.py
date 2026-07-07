@@ -38,8 +38,12 @@ CMD_HEARTBEAT = "WAGO_HEARTBEAT"
 CMD_SET_SERVER_IP = "WAGO_SET_SERVER_IP"
 CMD_DALI_SET = "WAGO_DALI_SET"
 CMD_DALI_GET = "WAGO_DALI_GET"
+CMD_GET_VERSION = "WAGO_GET_VERSION"
 MSG_INPUT_PREFIX = "WAGO INT"
 MSG_KNX_PREFIX = "WAGO KNX"
+
+# Connectivity monitor: interval (s) between Modbus reachability probes
+DEFAULT_MONITOR_INTERVAL = 30.0
 
 # --- Platforms ---------------------------------------------------------------
 PLATFORMS = ["light", "switch", "cover", "sensor", "binary_sensor", "event"]
