@@ -40,20 +40,32 @@ def detect_local_ip(target: str) -> str | None:
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
-    def __init__(self, on_datagram: Callable[[str, str], None]) -> None:
+    def __init__(
+        self,
+        on_datagram: Callable[[str, str], None],
+        on_lost: Callable[[], None] | None = None,
+    ) -> None:
         self._on_datagram = on_datagram
+        self._on_lost = on_lost
         self.transport: asyncio.DatagramTransport | None = None
 
     def connection_made(self, transport) -> None:  # type: ignore[override]
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr) -> None:  # type: ignore[override]
-        text = data.split(b"\x00", 1)[0].decode("latin-1", "replace").strip()
-        if text:
-            self._on_datagram(text, addr[0])
+        # A datagram normally carries one "WAGO INT ..." message, but process
+        # every NUL/newline-separated part defensively so none is ever dropped.
+        for chunk in data.replace(b"\n", b"\x00").split(b"\x00"):
+            text = chunk.decode("latin-1", "replace").strip()
+            if text:
+                self._on_datagram(text, addr[0])
 
     def error_received(self, exc) -> None:  # type: ignore[override]
         _LOGGER.debug("UDP error: %s", exc)
+
+    def connection_lost(self, exc) -> None:  # type: ignore[override]
+        if self._on_lost is not None:
+            self._on_lost()
 
 
 class WagoHub:
@@ -72,11 +84,11 @@ class WagoHub:
         self.host = host
         self.udp_port = udp_port
         self.heartbeat_interval = heartbeat_interval
-        self.local_ip = local_ip or None
-        self._auto_detect_local_ip = local_ip is None
+        self.local_ip = local_ip or detect_local_ip(host)
 
         self._modbus = ModbusTcpClient(host, modbus_port, slave=MODBUS_SLAVE_ID)
         self._udp_transport: asyncio.DatagramTransport | None = None
+        self._udp_closed: asyncio.Event = asyncio.Event()
         self._heartbeat_task: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
 
@@ -100,33 +112,39 @@ class WagoHub:
     # -- lifecycle ------------------------------------------------------------
     async def async_setup(self) -> None:
         """Open sockets, start heartbeat. Never raises on PLC being offline."""
-        if self._auto_detect_local_ip:
-            self.local_ip = await self.hass.async_add_executor_job(
-                detect_local_ip, self.host
-            )
-
         with contextlib.suppress(ModbusError):
             await self._modbus.connect()
             self.available = True
 
         loop = self.hass.loop
-        # Bind on all interfaces so we receive the PLC's input notifications.
-        # reuse_port is not available on every platform; fall back gracefully,
-        # and keep the hub usable (Modbus only) if the port cannot be bound.
-        for kwargs in ({"reuse_port": True}, {}):
+        # Bind a SINGLE exclusive socket to receive the PLC's input packets.
+        #
+        # IMPORTANT: do NOT use reuse_port. On Linux SO_REUSEPORT makes the
+        # kernel load-balance incoming datagrams across *every* socket bound to
+        # the port, so a socket lingering from a previous setup (after a reload,
+        # update or restart) would silently steal a share of the PLC's input
+        # notifications - causing intermittently "missed" clicks. An exclusive
+        # bind guarantees every packet reaches this one socket.
+        self._udp_closed.clear()
+        self._udp_transport = None
+        for attempt in range(6):
             try:
                 self._udp_transport, _ = await loop.create_datagram_endpoint(
-                    lambda: _UdpProtocol(self._handle_datagram),
+                    lambda: _UdpProtocol(self._handle_datagram, self._udp_closed.set),
                     local_addr=("0.0.0.0", self.udp_port),
-                    **kwargs,
                 )
                 break
-            except (OSError, ValueError, NotImplementedError) as err:
-                _LOGGER.debug("UDP bind attempt failed (%s): %s", kwargs, err)
+            except OSError as err:
+                # Port still held by the previous socket during a reload; wait
+                # for it to be released, then retry.
+                _LOGGER.debug("UDP bind attempt %d/6 failed: %s", attempt + 1, err)
+                await asyncio.sleep(0.5)
         if self._udp_transport is None:
             _LOGGER.warning(
                 "Could not bind UDP port %d; input events and DALI state will be "
-                "unavailable, but Modbus control still works.",
+                "unavailable, but Modbus control still works. Another process may "
+                "be using the port (a running Calaos server, or a previous "
+                "instance that did not release it).",
                 self.udp_port,
             )
         self._heartbeat_task = loop.create_task(self._heartbeat_loop())
@@ -150,6 +168,11 @@ class WagoHub:
                     await task
         if self._udp_transport:
             self._udp_transport.close()
+            # Wait for the socket to be fully released so a subsequent reload can
+            # rebind the port cleanly (avoids two sockets briefly sharing it).
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._udp_closed.wait(), timeout=2.0)
+            self._udp_transport = None
         await self._modbus.close()
 
     # -- heartbeat ------------------------------------------------------------

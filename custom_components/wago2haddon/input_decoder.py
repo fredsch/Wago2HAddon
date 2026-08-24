@@ -132,3 +132,8 @@ class InputDecoder:
         elif self._kind == "long":
             base += [EV_LONG]
         return base
+
+    def cancel_all(self) -> None:
+        """Cancel any pending timers (call when the entity is removed)."""
+        self._cancel("_cancel_multi")
+        self._cancel("_cancel_long")

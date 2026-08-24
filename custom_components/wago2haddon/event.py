@@ -53,8 +53,23 @@ class WagoInputEvent(WagoEntity, EventEntity):
 
     @callback
     def _emit(self, event_type: str) -> None:
+        # Update the event entity (idiomatic HA trigger)...
         self._trigger_event(event_type)
         self.async_write_ha_state()
+        # ...and also fire a bus event, which is never de-duplicated and gives a
+        # rock-solid trigger option for automations:
+        #   trigger: event / event_type: wago2haddon_event
+        #   event_data: { entity_id: <this>, type: single_click }
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_event",
+            {
+                "entity_id": self.entity_id,
+                "type": event_type,
+                "var": self._io.var,
+                "kind": self._io.kind,
+                "name": self._attr_name,
+            },
+        )
 
     async def async_added_to_hass(self) -> None:
         self._unregister = self._hub.register_input(self._io.var, self._decoder.feed)
@@ -62,3 +77,4 @@ class WagoInputEvent(WagoEntity, EventEntity):
     async def async_will_remove_from_hass(self) -> None:
         if self._unregister:
             self._unregister()
+        self._decoder.cancel_all()

@@ -122,6 +122,38 @@ Communication sur **deux canaux** :
 | Lecture DALI | HA ↔ PLC | `WAGO_DALI_GET <line> <address>` → `WAGO_DALI_GET <0\|1> <dimm%>` |
 | Version du programme | HA ↔ PLC | `WAGO_GET_VERSION` → `WAGO_GET_VERSION <H>.<L> 750-841` |
 
+## Automatisations sur les entrées (clic / double / long)
+
+Deux façons de déclencher une automatisation depuis un bouton :
+
+1. **Sur l'entité `event`** (méthode standard) : dans l'automatisation, déclencheur
+   « Quand un événement se produit » → l'entité `event.<pièce>_<nom>` → type
+   `single_click` (ou `double_click`, `triple_click`, `long_press`).
+
+2. **Sur l'événement de bus** (le plus robuste, jamais dédupliqué) :
+   ```yaml
+   triggers:
+     - trigger: event
+       event_type: wago2haddon_event
+       event_data:
+         entity_id: event.salon_interrupteur
+         type: single_click
+   ```
+
+Chaque bouton émet les deux à chaque action, tu choisis la méthode que tu préfères.
+
+**Important sur le clic simple d'un interrupteur `WIDigitalTriple` :** comme il faut
+distinguer un clic simple d'un double/triple, l'événement `single_click` n'est émis
+qu'à la **fin de la fenêtre multi-clic** (350 ms par défaut) — c'est normal et voulu.
+Si un bouton donné ne sert jamais au double/triple clic et que tu veux une réaction
+immédiate, baisse « Délai max entre deux clics » dans les options (par ex. 150 ms).
+
+**Si des clics sont « ratés » de temps en temps :** vérifie qu'**une seule chose**
+écoute le port UDP 4646 — il ne doit pas rester un serveur Calaos en marche, ni une
+seconde instance de l'intégration, sinon les paquets d'entrée peuvent être partagés
+entre les deux. Le journal indique `Could not bind UDP port 4646` si le port est déjà
+pris.
+
 ## Notes techniques
 
 - Client Modbus/TCP **autonome** (pas de dépendance `pymodbus`, donc aucun conflit de
