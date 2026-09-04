@@ -1,7 +1,6 @@
 """Light platform: on/off relays, DALI dimmers and RGB DALI lights."""
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.light import (
@@ -11,9 +10,8 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DOMAIN
 from .entity import WagoEntity
@@ -26,13 +24,12 @@ async def async_setup_entry(
 ) -> None:
     store = hass.data[DOMAIN][entry.entry_id]
     hub: WagoHub = store["hub"]
-    scan = timedelta(seconds=store["scan_interval"])
     entities: list[LightEntity] = []
     for io in store["devices"]:
         if isinstance(io, DigitalOutput) and io.as_light:
             entities.append(WagoDigitalLight(hub, io))
         elif isinstance(io, DaliOutput):
-            entities.append(WagoDaliLight(hub, io, scan))
+            entities.append(WagoDaliLight(hub, io))
         elif isinstance(io, DaliRGBOutput):
             entities.append(WagoDaliRGBLight(hub, io))
     async_add_entities(entities)
@@ -67,37 +64,34 @@ class WagoDigitalLight(WagoEntity, LightEntity):
 
 
 class WagoDaliLight(WagoEntity, LightEntity):
-    """A mono DALI/DMX dimmable light."""
+    """A mono DALI/DMX dimmable light.
+
+    The PLC's internal program is suspended while the bridge runs, so a DALI
+    light can only ever be changed from Home Assistant. Its state is therefore
+    tracked optimistically (which is exact here) and is NOT polled: matching
+    Calaos, the ballast is read once at startup, and only for real DALI
+    addresses (1-64). DMX channels (address >= 100) have no read-back.
+    """
 
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, hub: WagoHub, io: DaliOutput, scan: timedelta) -> None:
+    def __init__(self, hub: WagoHub, io: DaliOutput) -> None:
         super().__init__(hub, io)
         self._io: DaliOutput = io
-        self._scan = scan
         self._attr_is_on = False
         self._attr_brightness = 0
 
     async def async_added_to_hass(self) -> None:
-        await self._refresh()
-        self.async_on_remove(
-            async_track_time_interval(self.hass, self._refresh_cb, self._scan)
-        )
-
-    @callback
-    def _refresh_cb(self, _now) -> None:
-        self.hass.async_create_task(self._refresh())
-
-    async def _refresh(self) -> None:
         ch = self._io.channel
-        res = await self._hub.dali_get(ch.line, ch.address)
-        if res is None:
-            return
-        is_on, percent = res
-        self._attr_is_on = is_on
-        self._attr_brightness = round(percent * 255 / 100)
-        self.async_write_ha_state()
+        # One-time initial read for genuine DALI addresses only (no DMX >= 100).
+        if ch.address < 100:
+            res = await self._hub.dali_get(ch.line, ch.address)
+            if res is not None:
+                is_on, percent = res
+                self._attr_is_on = is_on
+                self._attr_brightness = round(percent * 255 / 100)
+                self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         ch = self._io.channel
