@@ -4,6 +4,24 @@ Toutes les évolutions notables de Wago2HAddon sont consignées ici.
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit un versionnage sémantique.
 
+## [1.0.5] - 2026-08-24
+
+### Modifié
+- Version de maintenance : montée de version, sans changement fonctionnel depuis
+  la 1.0.4.
+
+## [1.0.4] - 2026-08-24
+
+### Corrigé
+- **Lumières DALL qui repassaient à « éteint » ~1-2 min après l'allumage.**
+  L'état DALI était relu périodiquement via `WAGO_DALI_GET`, or cette relecture
+  renvoie « éteint » (la requête est peu fiable, et impossible pour du DMX en
+  adresse ≥ 100), ce qui écrasait l'état réel. Conformément à Calaos, l'état DALI
+  n'est plus interrogé en boucle : il est lu **une seule fois au démarrage** (et
+  uniquement pour les vraies adresses DALI 1-64), puis suivi de façon **optimiste**.
+  Comme le programme interne de l'automate est suspendu, une lumière DALI ne peut
+  changer que depuis Home Assistant : l'état optimiste est donc exact.
+
 ## [1.0.3] - 2026-08-24
 
 ### Corrigé
@@ -64,6 +82,8 @@ et le projet suit un versionnage sémantique.
 - **Import** de la configuration Calaos `io.xml` pour créer automatiquement toutes
   les entités.
 
+[1.0.5]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.5
+[1.0.4]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.4
 [1.0.3]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.3
 [1.0.2]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.2
 [1.0.1]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.1
