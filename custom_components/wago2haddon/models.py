@@ -34,6 +34,7 @@ class DigitalOutput(WagoIO):
     wago_841: bool = True
     knx: bool = False
     as_light: bool = True   # True -> light platform, False -> switch platform
+    style: str = ""         # Calaos io_style hint: light/heater/pump/boiler/outlet…
 
 
 @dataclass

@@ -104,11 +104,17 @@ def parse_calaos_xml(path: str, only_host: str | None = None) -> list[WagoIO]:
 
             elif io_type == T_OUTPUT_DIGITAL:
                 gtype = (a.get("gtype") or a.get("gui_type") or "light").lower()
+                # Calaos stores appliance kind in io_style (heater, pump, boiler,
+                # outlet…). Only a genuine "light" style becomes a light entity;
+                # everything else is a switch.
+                style = (a.get("io_style") or "").lower()
+                is_light = gtype == "light" and style in ("", "light")
                 dev = DigitalOutput(
                     var=_to_int(a.get("var")),
                     wago_841=_is_true(a.get("wago_841"), True),
                     knx=_is_true(a.get("knx")),
-                    as_light=(gtype == "light"),
+                    as_light=is_light,
+                    style=style,
                     **common,
                 )
 
