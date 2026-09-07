@@ -4,6 +4,22 @@ Toutes les évolutions notables de Wago2HAddon sont consignées ici.
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit un versionnage sémantique.
 
+## [1.0.6] - 2026-08-24
+
+### Corrigé
+- **Registres de climatisation, pompes, électrovannes et contacteurs apparaissaient
+  comme des lumières.** Dans le fichier Calaos, ces sorties ont `gui_type="light"`
+  mais un attribut `io_style` distinct (`heater`, `pump`, `boiler`, `outlet`) que
+  l'importateur ignorait. Il en tient désormais compte : ces sorties sont créées
+  comme **`switch`** (avec la classe *prise* pour `outlet`, et une icône adaptée pour
+  radiateur/pompe/chauffe-eau), tandis que les vraies lumières restent des `light`.
+
+### Note de migration
+- Après mise à jour, les entités concernées changent de domaine (`light.*` →
+  `switch.*`) : leur `entity_id` change et les anciennes entités `light.*`
+  deviennent orphelines. Pense à mettre à jour tes tableaux de bord et
+  automatisations, et à supprimer les entités `light.*` devenues indisponibles.
+
 ## [1.0.5] - 2026-08-24
 
 ### Modifié
@@ -82,6 +98,7 @@ et le projet suit un versionnage sémantique.
 - **Import** de la configuration Calaos `io.xml` pour créer automatiquement toutes
   les entités.
 
+[1.0.6]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.6
 [1.0.5]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.5
 [1.0.4]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.4
 [1.0.3]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.3
