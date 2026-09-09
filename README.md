@@ -57,6 +57,7 @@ natives Home Assistant.
 | Famille 750-8xx | Décalage d'adresse des sorties (+4096) | vrai |
 | Délai max entre clics | Fenêtre double/triple | 350 ms |
 | Seuil clic long | Durée d'un appui long | 500 ms |
+| Restaurer l'état après redémarrage | Volets et lumières DALI/DMX retrouvent leur dernier état | activé |
 
 ### Import du fichier Calaos `io.xml`
 

@@ -4,6 +4,20 @@ Toutes les évolutions notables de Wago2HAddon sont consignées ici.
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit un versionnage sémantique.
 
+## [1.0.7] - 2026-08-24
+
+### Ajouté
+- **Restauration de l'état au redémarrage** pour les **volets** (dernière position
+  estimée) et les **lumières DALI/DMX** (allumage, luminosité, couleur RGB), via
+  `RestoreEntity`. Fini le volet en « inconnu » ou la lampe DMX/RGB qui repart
+  éteinte après un redémarrage ou une mise à jour de Home Assistant. La restauration
+  est fiable ici puisque seul Home Assistant pilote ces sorties (le programme interne
+  de l'automate est suspendu).
+- **Option activable/désactivable** « Restaurer l'état après redémarrage » dans les
+  réglages de l'intégration (Configurer), activée par défaut. Les relais et lampes
+  on/off ne sont pas concernés : ils continuent de relire leur état réel sur
+  l'automate au démarrage.
+
 ## [1.0.6] - 2026-08-24
 
 ### Corrigé
@@ -98,6 +112,7 @@ et le projet suit un versionnage sémantique.
 - **Import** de la configuration Calaos `io.xml` pour créer automatiquement toutes
   les entités.
 
+[1.0.7]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.7
 [1.0.6]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.6
 [1.0.5]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.5
 [1.0.4]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.4
