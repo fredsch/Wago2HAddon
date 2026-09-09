@@ -19,6 +19,7 @@ from homeassistant.components.cover import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .entity import WagoEntity
@@ -33,15 +34,16 @@ async def async_setup_entry(
 ) -> None:
     store = hass.data[DOMAIN][entry.entry_id]
     hub: WagoHub = store["hub"]
+    restore: bool = store["restore_state"]
     entities = [
-        WagoShutter(hub, io)
+        WagoShutter(hub, io, restore)
         for io in store["devices"]
         if isinstance(io, ShutterOutput)
     ]
     async_add_entities(entities)
 
 
-class WagoShutter(WagoEntity, CoverEntity):
+class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
     """A shutter driven by two coils with timed position feedback."""
 
     _attr_device_class = CoverDeviceClass.SHUTTER
@@ -52,12 +54,33 @@ class WagoShutter(WagoEntity, CoverEntity):
         | CoverEntityFeature.SET_POSITION
     )
 
-    def __init__(self, hub: WagoHub, io: ShutterOutput) -> None:
+    def __init__(self, hub: WagoHub, io: ShutterOutput, restore: bool = True) -> None:
         super().__init__(hub, io)
         self._io: ShutterOutput = io
+        self._restore = restore
         self._position: float | None = None  # 0 = closed, 100 = open
         self._moving: str | None = None      # None | "open" | "close"
         self._task: asyncio.Task | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Restore the last estimated position across restarts (only HA can move
+        # these shutters, so the restored value is accurate).
+        if not self._restore:
+            return
+        last = await self.async_get_last_state()
+        if last is None or last.state in (None, "unknown", "unavailable"):
+            return
+        pos = last.attributes.get("current_position")
+        if pos is not None:
+            try:
+                self._position = float(pos)
+            except (TypeError, ValueError):
+                pass
+        elif last.state == "closed":
+            self._position = 0.0
+        elif last.state == "open":
+            self._position = 100.0
 
     # -- HA properties --------------------------------------------------------
     @property

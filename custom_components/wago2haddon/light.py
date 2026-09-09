@@ -12,6 +12,7 @@ from homeassistant.components.light import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .entity import WagoEntity
@@ -24,14 +25,15 @@ async def async_setup_entry(
 ) -> None:
     store = hass.data[DOMAIN][entry.entry_id]
     hub: WagoHub = store["hub"]
+    restore: bool = store["restore_state"]
     entities: list[LightEntity] = []
     for io in store["devices"]:
         if isinstance(io, DigitalOutput) and io.as_light:
             entities.append(WagoDigitalLight(hub, io))
         elif isinstance(io, DaliOutput):
-            entities.append(WagoDaliLight(hub, io))
+            entities.append(WagoDaliLight(hub, io, restore))
         elif isinstance(io, DaliRGBOutput):
-            entities.append(WagoDaliRGBLight(hub, io))
+            entities.append(WagoDaliRGBLight(hub, io, restore))
     async_add_entities(entities)
 
 
@@ -63,7 +65,7 @@ class WagoDigitalLight(WagoEntity, LightEntity):
             self.async_write_ha_state()
 
 
-class WagoDaliLight(WagoEntity, LightEntity):
+class WagoDaliLight(WagoEntity, LightEntity, RestoreEntity):
     """A mono DALI/DMX dimmable light.
 
     The PLC's internal program is suspended while the bridge runs, so a DALI
@@ -76,15 +78,27 @@ class WagoDaliLight(WagoEntity, LightEntity):
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, hub: WagoHub, io: DaliOutput) -> None:
+    def __init__(self, hub: WagoHub, io: DaliOutput, restore: bool = True) -> None:
         super().__init__(hub, io)
         self._io: DaliOutput = io
+        self._restore = restore
         self._attr_is_on = False
         self._attr_brightness = 0
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
         ch = self._io.channel
-        # One-time initial read for genuine DALI addresses only (no DMX >= 100).
+        # 1) Restore last known state across restarts, if enabled.
+        if self._restore:
+            last = await self.async_get_last_state()
+            if last is not None and last.state in ("on", "off"):
+                self._attr_is_on = last.state == "on"
+                brightness = last.attributes.get("brightness")
+                if brightness is not None:
+                    self._attr_brightness = int(brightness)
+                self.async_write_ha_state()
+                return
+        # 2) Otherwise, one-time initial read for genuine DALI addresses only.
         if ch.address < 100:
             res = await self._hub.dali_get(ch.line, ch.address)
             if res is not None:
@@ -111,18 +125,37 @@ class WagoDaliLight(WagoEntity, LightEntity):
         self.async_write_ha_state()
 
 
-class WagoDaliRGBLight(WagoEntity, LightEntity):
+class WagoDaliRGBLight(WagoEntity, LightEntity, RestoreEntity):
     """An RGB DALI/DMX light (three channels)."""
 
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
 
-    def __init__(self, hub: WagoHub, io: DaliRGBOutput) -> None:
+    def __init__(self, hub: WagoHub, io: DaliRGBOutput, restore: bool = True) -> None:
         super().__init__(hub, io)
         self._io: DaliRGBOutput = io
+        self._restore = restore
         self._attr_is_on = False
         self._attr_brightness = 255
         self._attr_rgb_color = (255, 255, 255)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # RGB/DMX has no read-back, so restoring the last state is the only way
+        # to survive a restart (accurate here, as only HA drives these).
+        if not self._restore:
+            return
+        last = await self.async_get_last_state()
+        if last is None or last.state not in ("on", "off"):
+            return
+        self._attr_is_on = last.state == "on"
+        brightness = last.attributes.get("brightness")
+        if brightness is not None:
+            self._attr_brightness = int(brightness)
+        rgb = last.attributes.get("rgb_color")
+        if rgb is not None:
+            self._attr_rgb_color = tuple(rgb)
+        self.async_write_ha_state()
 
     def _send(self, rgb: tuple[int, int, int]) -> None:
         r, g, b = rgb

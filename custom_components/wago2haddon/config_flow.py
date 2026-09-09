@@ -21,6 +21,7 @@ from .const import (
     CONF_LONG_PRESS_MS,
     CONF_MODBUS_PORT,
     CONF_MULTI_CLICK_MS,
+    CONF_RESTORE_STATE,
     CONF_SCAN_INTERVAL,
     CONF_UDP_PORT,
     CONF_WAGO_841,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_LONG_PRESS_MS,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MULTI_CLICK_MS,
+    DEFAULT_RESTORE_STATE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_UDP_PORT,
     DEFAULT_WAGO_841,
@@ -74,6 +76,10 @@ def _schema(defaults: dict[str, Any]) -> vol.Schema:
                 CONF_LONG_PRESS_MS,
                 default=defaults.get(CONF_LONG_PRESS_MS, DEFAULT_LONG_PRESS_MS),
             ): int,
+            vol.Optional(
+                CONF_RESTORE_STATE,
+                default=defaults.get(CONF_RESTORE_STATE, DEFAULT_RESTORE_STATE),
+            ): bool,
         }
     )
 

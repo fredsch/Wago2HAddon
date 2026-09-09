@@ -14,6 +14,7 @@ CONF_WAGO_841 = "wago_841"
 CONF_XML_PATH = "calaos_xml_path"
 CONF_MULTI_CLICK_MS = "multi_click_ms"
 CONF_LONG_PRESS_MS = "long_press_ms"
+CONF_RESTORE_STATE = "restore_state"
 
 # --- Defaults ----------------------------------------------------------------
 DEFAULT_MODBUS_PORT = 502
@@ -23,6 +24,7 @@ DEFAULT_SCAN_INTERVAL = 120  # seconds; analog/temperature polling (user require
 DEFAULT_WAGO_841 = True  # 750-8xx family (750-881 included)
 DEFAULT_MULTI_CLICK_MS = 350
 DEFAULT_LONG_PRESS_MS = 500
+DEFAULT_RESTORE_STATE = True  # restore last state of covers & DALI/DMX lights
 
 # --- Modbus address offsets (must match calaos_base exactly) -----------------
 # src/lib/Utils.h

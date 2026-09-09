@@ -22,6 +22,7 @@ from .const import (
     CONF_LONG_PRESS_MS,
     CONF_MODBUS_PORT,
     CONF_MULTI_CLICK_MS,
+    CONF_RESTORE_STATE,
     CONF_SCAN_INTERVAL,
     CONF_UDP_PORT,
     CONF_XML_PATH,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_LONG_PRESS_MS,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MULTI_CLICK_MS,
+    DEFAULT_RESTORE_STATE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_UDP_PORT,
     DOMAIN,
@@ -82,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "scan_interval": data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         "multi_click_ms": data.get(CONF_MULTI_CLICK_MS, DEFAULT_MULTI_CLICK_MS),
         "long_press_ms": data.get(CONF_LONG_PRESS_MS, DEFAULT_LONG_PRESS_MS),
+        "restore_state": data.get(CONF_RESTORE_STATE, DEFAULT_RESTORE_STATE),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
