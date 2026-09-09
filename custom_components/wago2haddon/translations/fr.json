@@ -14,12 +14,17 @@
           "heartbeat_interval": "Intervalle du heartbeat (s)",
           "wago_841": "Automate de la famille 750-8xx (750-881)",
           "multi_click_ms": "Délai max entre deux clics (ms)",
-          "long_press_ms": "Seuil du clic long (ms)"
+          "long_press_ms": "Seuil du clic long (ms)",
+          "restore_state": "Restaurer le dernier état des volets et lumières DALI/DMX après un redémarrage"
         }
       }
     },
-    "error": { "xml_not_found": "Le fichier io.xml est introuvable à ce chemin." },
-    "abort": { "already_configured": "Cet automate est déjà configuré." }
+    "error": {
+      "xml_not_found": "Le fichier io.xml est introuvable à ce chemin."
+    },
+    "abort": {
+      "already_configured": "Cet automate est déjà configuré."
+    }
   },
   "options": {
     "step": {
@@ -35,11 +40,14 @@
           "heartbeat_interval": "Intervalle du heartbeat (s)",
           "wago_841": "Automate de la famille 750-8xx (750-881)",
           "multi_click_ms": "Délai max entre deux clics (ms)",
-          "long_press_ms": "Seuil du clic long (ms)"
+          "long_press_ms": "Seuil du clic long (ms)",
+          "restore_state": "Restaurer le dernier état des volets et lumières DALI/DMX après un redémarrage"
         }
       }
     },
-    "error": { "xml_not_found": "Le fichier io.xml est introuvable à ce chemin." }
+    "error": {
+      "xml_not_found": "Le fichier io.xml est introuvable à ce chemin."
+    }
   },
   "entity": {
     "event": {
