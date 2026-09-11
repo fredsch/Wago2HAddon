@@ -1,168 +1,178 @@
 # Wago2HAddon
 
-Passerelle **Home Assistant** ↔ automate **Wago 750-881** équipé du programme
-**Codesys Calaos**. L'intégration parle le protocole d'origine de Calaos (Modbus/TCP
-+ UDP 4646), sans MQTT ni Docker, et expose vos entrées/sorties comme des entités
-natives Home Assistant.
+**Home Assistant** ↔ **Wago 750-881** PLC bridge, for PLCs running the **Calaos
+Codesys** program. The integration speaks Calaos' native protocol (Modbus/TCP +
+UDP 4646), without MQTT or Docker, and exposes your inputs/outputs as native Home
+Assistant entities.
 
-> **Terminologie.** HACS distribue des *intégrations personnalisées* (du code Python
-> exécuté dans Home Assistant), pas des *add-ons* au sens du Superviseur (conteneurs
-> Docker). Wago2HAddon est donc livré comme une **intégration personnalisée
-> installable via HACS** : c'est la forme correcte pour maintenir le heartbeat
-> permanent et créer des entités natives. Le nom « Wago2HAddon » est conservé.
+> **Terminology.** HACS distributes *custom integrations* (Python code that runs
+> inside Home Assistant), not *add-ons* in the Supervisor sense (Docker
+> containers). Wago2HAddon is therefore delivered as a **custom integration
+> installable through HACS** — the correct form to keep the permanent heartbeat
+> alive and to create native entities. The name "Wago2HAddon" is kept.
 
-## Ce que fait l'intégration
+## What the integration does
 
-- **Entrées TOR** (bornes type 750-1405 / 750-430) : clic simple, **double-clic**,
-  **triple-clic** et **clic long**, décodés côté passerelle à partir des fronts bruts
-  envoyés par l'automate. Chaque entrée devient une entité `event` (+ un
-  `binary_sensor` reflétant l'état brut de la ligne).
-- **Sorties TOR** (bornes type 750-1504 / 750-430) : relais, luminaires, pompes…
-  exposés en `light` (si repérés comme éclairage) ou `switch` (relais/pompe).
-- **Volets** (`WOVoletSmart`) : entité `cover` avec **position estimée** à partir des
-  **temps de montée/descente en secondes** (le programme interne étant suspendu, la
-  logique de position vit dans la passerelle).
-- **DALI** (borne 750-641) : éclairages simples (`light` avec variation) ou **RGB**
-  (`light` couleur), via `WAGO_DALI_SET` / `WAGO_DALI_GET`.
-- **Analogique / température** (borne 750-640 + sondes PT100/PT1000) : entité `sensor`
-  **relevée toutes les 2 minutes** par défaut (intervalle réglable), conversion
-  signée ÷10 pour la température.
-- **Suspension du programme interne** : tant que la passerelle tourne, un *heartbeat*
-  périodique maintient l'automate en « mode serveur », ce qui **suspend** son
-  programme autonome (`ManageOutput`). Voir plus bas.
-- **Diagnostic de l'automate** : deux entités de diagnostic sont créées automatiquement
-  pour chaque automate — un `binary_sensor` de **connectivité En ligne/Hors ligne**
-  (sondé en Modbus toutes les 30 s) et un `sensor` affichant la **version du programme
-  Calaos** installé sur le Wago (commande `WAGO_GET_VERSION`). La version apparaît aussi
-  directement sur la page de l'appareil (champ « Version logicielle »).
+- **Digital inputs** (e.g. 750-1405 / 750-430 terminals): single click, **double
+  click**, **triple click** and **long press**, decoded on the gateway side from
+  the raw edges sent by the PLC. Each input becomes an `event` entity (plus a
+  `binary_sensor` reflecting the raw line state).
+- **Digital outputs** (e.g. 750-1504 / 750-430 terminals): relays, lights,
+  pumps… exposed as `light` (when flagged as lighting) or `switch`
+  (relay/pump/heater/valve).
+- **Shutters** (`WOVoletSmart`): a `cover` entity with **position estimated** from
+  the configured **up/down travel times in seconds** (since the internal program is
+  suspended, the position logic lives in the gateway).
+- **DALI** (750-641 terminal): single dimmable lights (`light` with brightness) or
+  **RGB** (`light` with color), via `WAGO_DALI_SET` / `WAGO_DALI_GET`.
+- **Analog / temperature** (750-640 terminal + PT100/PT1000 probes): a `sensor`
+  **read every 2 minutes** by default (configurable interval), signed value
+  divided by 10 for temperature.
+- **Internal program suspension**: while the gateway runs, a periodic *heartbeat*
+  keeps the PLC in "server mode", which **suspends** its standalone program
+  (`ManageOutput`). See below.
+- **PLC diagnostics**: two diagnostic entities are created automatically per PLC —
+  an Online/Offline **connectivity** `binary_sensor` (Modbus-probed every 30 s) and
+  a `sensor` showing the **Calaos program version** installed on the Wago
+  (`WAGO_GET_VERSION` command). The version also appears directly on the device
+  page ("Firmware version" field).
 
 ## Installation via HACS
 
-1. HACS → menu ⋮ → **Dépôts personnalisés** → ajoutez l'URL de ce dépôt, catégorie
+1. HACS → ⋮ menu → **Custom repositories** → add this repository's URL, category
    **Integration**.
-2. Installez **Wago2HAddon**, puis redémarrez Home Assistant.
-3. **Paramètres → Appareils et services → Ajouter une intégration → Wago2HAddon**.
+2. Install **Wago2HAddon**, then restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Wago2HAddon**.
 
 ## Configuration
 
-| Champ | Rôle | Défaut |
-|-------|------|--------|
-| Adresse IP de l'automate | IP du Wago | — |
-| Port Modbus/TCP | Modbus | 502 |
-| Port UDP Calaos | Heartbeat / DALI / entrées | 4646 |
-| Chemin du `io.xml` | Import automatique des entités | (optionnel) |
-| IP locale | Destinataire des notifications d'entrées | auto-détectée |
-| Intervalle analogique/température | Cadence de lecture | 120 s |
-| Intervalle heartbeat | Cadence du heartbeat | 10 s |
-| Famille 750-8xx | Décalage d'adresse des sorties (+4096) | vrai |
-| Délai max entre clics | Fenêtre double/triple | 350 ms |
-| Seuil clic long | Durée d'un appui long | 500 ms |
-| Restaurer l'état après redémarrage | Volets et lumières DALI/DMX retrouvent leur dernier état | activé |
+| Field | Purpose | Default |
+|-------|---------|---------|
+| PLC IP address | Wago IP | — |
+| Modbus/TCP port | Modbus | 502 |
+| Calaos UDP port | Heartbeat / DALI / inputs | 4646 |
+| Path to `io.xml` | Automatic entity import | (optional) |
+| Local IP | Destination for input notifications | auto-detected |
+| Analog/temperature interval | Read cadence | 120 s |
+| Heartbeat interval | Heartbeat cadence | 10 s |
+| 750-8xx family | Output address offset (+4096) | true |
+| Max delay between clicks | Double/triple window | 350 ms |
+| Long-press threshold | Duration of a long press | 500 ms |
+| Restore state after restart | Shutters and DALI/DMX lights recover their last state | enabled |
 
-### Import du fichier Calaos `io.xml`
+### Importing the Calaos `io.xml` file
 
-Le plus simple est de laisser l'intégration lire votre configuration Calaos existante.
-Copiez votre `io.xml` (par ex. `io_20260703.xml`) dans le dossier `/config` de Home
-Assistant et indiquez son chemin (ex. `/config/io_20260703.xml`). L'intégration ne
-retient que les entités **Wago** de l'automate configuré (les MQTT, scénarios,
-caméras, minuteries internes de Calaos sont ignorés). Vos 24 pièces et l'ensemble des
-entités sont recréés automatiquement, nommés `Pièce - Nom`.
+The easiest path is to let the integration read your existing Calaos
+configuration. Copy your `io.xml` (e.g. `io_20260703.xml`) into Home Assistant's
+`/config` folder and point to it (e.g. `/config/io_20260703.xml`). The integration
+keeps only the **Wago** entities of the configured PLC (Calaos' MQTT, scenarios,
+cameras and internal timers are ignored). All your rooms and entities are recreated
+automatically, named `Room - Name`.
 
-Pour recharger après modification du fichier : **⋮ → Recharger** sur l'intégration.
+To reload after editing the file: **⋮ → Reload** on the integration.
 
-## Mécanisme de suspension du programme interne
+## Internal-program suspension mechanism
 
-Le firmware Codesys de Calaos possède une variable `HEARTBEAT` :
+The Calaos Codesys firmware has a `HEARTBEAT` variable:
 
-- à la réception d'un `WAGO_HEARTBEAT` (UDP 4646), un minuteur de 30 s est réarmé ;
-- tant qu'il ne déborde pas, `HEARTBEAT = TRUE` et le bloc `ManageOutput` (télérupteurs,
-  volets, DALI en autonome) **n'est pas exécuté** : l'automate est piloté par la
-  passerelle ;
-- si plus aucun heartbeat n'arrive pendant 30 s, `HEARTBEAT = FALSE` : l'automate
-  repasse en mode **autonome** (sécurité).
+- receiving a `WAGO_HEARTBEAT` (UDP 4646) re-arms a 30 s timer;
+- while it does not expire, `HEARTBEAT = TRUE` and the `ManageOutput` block
+  (teleruptors, shutters, standalone DALI) is **not executed**: the PLC is driven
+  by the gateway;
+- if no heartbeat arrives for 30 s, `HEARTBEAT = FALSE`: the PLC falls back to
+  **standalone** mode (safety).
 
-Wago2HAddon envoie `WAGO_SET_SERVER_IP <ip>` puis `WAGO_HEARTBEAT` toutes les 10 s.
-Quand vous arrêtez l'intégration, l'automate reprend donc automatiquement sa logique
-interne au bout de 30 s.
+Wago2HAddon sends `WAGO_SET_SERVER_IP <ip>` then `WAGO_HEARTBEAT` every 10 s. When
+you stop the integration, the PLC therefore automatically resumes its internal
+logic after 30 s.
 
-## Correspondance des entités
+## Entity mapping
 
-| Type Calaos | Entité HA | Détails |
+| Calaos type | HA entity | Details |
 |-------------|-----------|---------|
-| `WIDigitalBP` | `event` + `binary_sensor` | clic simple |
-| `WIDigitalTriple` | `event` + `binary_sensor` | simple / double / triple |
-| `WIDigitalLong` | `event` + `binary_sensor` | simple / long |
-| `WODigital` (light) | `light` | marche/arrêt |
-| `WODigital` (relais) | `switch` | relais / pompe |
-| `WOVolet` / `WOVoletSmart` | `cover` | position par temps |
-| `WODali` | `light` | variation 0-100 % |
-| `WODaliRVB` | `light` | couleur RGB |
-| `WITemp` | `sensor` | température °C (÷10) |
-| `WIAnalog` | `sensor` | valeur analogique |
+| `WIDigitalBP` | `event` + `binary_sensor` | single click |
+| `WIDigitalTriple` | `event` + `binary_sensor` | single / double / triple |
+| `WIDigitalLong` | `event` + `binary_sensor` | single / long |
+| `WODigital` (light) | `light` | on/off |
+| `WODigital` (relay/pump/heater…) | `switch` | on/off (by Calaos `io_style`) |
+| `WOVolet` / `WOVoletSmart` | `cover` | timed position |
+| `WODali` | `light` | 0-100 % dimming |
+| `WODaliRVB` | `light` | RGB color |
+| `WITemp` | `sensor` | temperature °C (÷10) |
+| `WIAnalog` | `sensor` | analog value |
 
-## Carte des adresses (identique à `calaos_base`)
+## Address map (identical to `calaos_base`)
 
-Communication sur **deux canaux** :
+Communication over **two channels**:
 
-**Modbus/TCP (port 502, esclave 1)**
+**Modbus/TCP (port 502, slave 1)**
 
-| Opération | Fonction | Adresse |
+| Operation | Function | Address |
 |-----------|----------|---------|
-| Lire une entrée TOR | FC1 (read coils) | `var` |
-| Écrire une sortie TOR | FC5 (force coil) | `var + 4096` (famille 750-8xx) |
-| Relire une sortie TOR | FC1 (read coils) | `var + 512` (repli `var`) |
-| Lire un registre analogique | FC3 (read holding) | `var` (température = signé ÷10) |
+| Read a digital input | FC1 (read coils) | `var` |
+| Write a digital output | FC5 (force coil) | `var + 4096` (750-8xx family) |
+| Read back a digital output | FC1 (read coils) | `var + 512` (fallback `var`) |
+| Read an analog register | FC3 (read holding) | `var` (temperature = signed ÷10) |
 
 **UDP (port 4646)**
 
-| Message | Sens | Format |
-|---------|------|--------|
-| Heartbeat | HA → PLC | `WAGO_SET_SERVER_IP <ip>` puis `WAGO_HEARTBEAT` |
-| Changement d'entrée | PLC → HA | `WAGO INT <var> <0\|1>` |
-| Commande DALI | HA → PLC | `WAGO_DALI_SET <line> <group> <address> <dimm%> <fade>` |
-| Lecture DALI | HA ↔ PLC | `WAGO_DALI_GET <line> <address>` → `WAGO_DALI_GET <0\|1> <dimm%>` |
-| Version du programme | HA ↔ PLC | `WAGO_GET_VERSION` → `WAGO_GET_VERSION <H>.<L> 750-841` |
+| Message | Direction | Format |
+|---------|-----------|--------|
+| Heartbeat | HA → PLC | `WAGO_SET_SERVER_IP <ip>` then `WAGO_HEARTBEAT` |
+| Input change | PLC → HA | `WAGO INT <var> <0\|1>` |
+| DALI command | HA → PLC | `WAGO_DALI_SET <line> <group> <address> <dimm%> <fade>` |
+| DALI read | HA ↔ PLC | `WAGO_DALI_GET <line> <address>` → `WAGO_DALI_GET <0\|1> <dimm%>` |
+| Program version | HA ↔ PLC | `WAGO_GET_VERSION` → `WAGO_GET_VERSION <H>.<L> 750-841` |
 
-## Automatisations sur les entrées (clic / double / long)
+## Input automations (click / double / long)
 
-Deux façons de déclencher une automatisation depuis un bouton :
+Two ways to trigger an automation from a button:
 
-1. **Sur l'entité `event`** (méthode standard) : dans l'automatisation, déclencheur
-   « Quand un événement se produit » → l'entité `event.<pièce>_<nom>` → type
-   `single_click` (ou `double_click`, `triple_click`, `long_press`).
+1. **On the `event` entity** (standard): in the automation, "When an event
+   occurs" trigger → the `event.<room>_<name>` entity → type `single_click` (or
+   `double_click`, `triple_click`, `long_press`).
 
-2. **Sur l'événement de bus** (le plus robuste, jamais dédupliqué) :
+2. **On the bus event** (most robust, never de-duplicated):
    ```yaml
    triggers:
      - trigger: event
        event_type: wago2haddon_event
        event_data:
-         entity_id: event.salon_interrupteur
+         entity_id: event.living_room_switch
          type: single_click
    ```
 
-Chaque bouton émet les deux à chaque action, tu choisis la méthode que tu préfères.
+Each button emits both on every action; pick whichever you prefer.
 
-**Important sur le clic simple d'un interrupteur `WIDigitalTriple` :** comme il faut
-distinguer un clic simple d'un double/triple, l'événement `single_click` n'est émis
-qu'à la **fin de la fenêtre multi-clic** (350 ms par défaut) — c'est normal et voulu.
-Si un bouton donné ne sert jamais au double/triple clic et que tu veux une réaction
-immédiate, baisse « Délai max entre deux clics » dans les options (par ex. 150 ms).
+**Note about the single click of a `WIDigitalTriple` switch:** because a single
+click must be distinguished from a double/triple, the `single_click` event is only
+emitted at the **end of the multi-click window** (350 ms by default) — this is
+expected. If a given button is never used for double/triple clicks and you want an
+immediate reaction, lower "Max delay between clicks" in the options (e.g. 150 ms).
 
-**Si des clics sont « ratés » de temps en temps :** vérifie qu'**une seule chose**
-écoute le port UDP 4646 — il ne doit pas rester un serveur Calaos en marche, ni une
-seconde instance de l'intégration, sinon les paquets d'entrée peuvent être partagés
-entre les deux. Le journal indique `Could not bind UDP port 4646` si le port est déjà
-pris.
+**If clicks are occasionally "missed":** make sure **only one thing** is listening
+on UDP port 4646 — no running Calaos server and no second instance of the
+integration, otherwise input packets may be shared between them. The log shows
+`Could not bind UDP port 4646` if the port is already taken.
 
-## Notes techniques
+## State restore after a restart
 
-- Client Modbus/TCP **autonome** (pas de dépendance `pymodbus`, donc aucun conflit de
-  version avec la copie embarquée de Home Assistant).
-- `iot_class: local_push` : les entrées arrivent en temps réel par UDP ; seuls les
-  capteurs analogiques sont interrogés périodiquement.
-- L'état DALI est optimiste, rafraîchi en tâche de fond via `WAGO_DALI_GET`.
+Shutters have no hardware position feedback and DALI/DMX lights have no read-back,
+so by default they would come back "unknown" (shutters) or "off" (DALI/DMX) after a
+Home Assistant restart. With **"Restore state after restart"** enabled (default),
+their last state is restored via `RestoreEntity`. This is accurate here because the
+PLC's internal program is suspended, so only Home Assistant can change those
+outputs while it is stopped. On/off relays and lights are unaffected: they always
+re-read their real state from the PLC at startup.
 
-## Licence
+## Technical notes
 
-GPLv3, comme le projet Calaos dont le protocole est ici ré-implémenté.
+- **Self-contained** Modbus/TCP client (no `pymodbus` dependency, so no version
+  clash with the copy Home Assistant already ships).
+- `iot_class: local_push`: inputs arrive in real time over UDP; only analog sensors
+  are polled periodically.
+- DALI state is optimistic, read once at startup for genuine DALI addresses.
+
+## License
+
+GPLv3, like the Calaos project whose protocol is re-implemented here.

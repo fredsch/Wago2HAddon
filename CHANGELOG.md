@@ -1,116 +1,110 @@
-# Journal des modifications
+# Changelog
 
-Toutes les évolutions notables de Wago2HAddon sont consignées ici.
-Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
-et le projet suit un versionnage sémantique.
+All notable changes to Wago2HAddon are documented here.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+and the project follows semantic versioning.
 
 ## [1.0.7] - 2026-08-24
 
-### Ajouté
-- **Restauration de l'état au redémarrage** pour les **volets** (dernière position
-  estimée) et les **lumières DALI/DMX** (allumage, luminosité, couleur RGB), via
-  `RestoreEntity`. Fini le volet en « inconnu » ou la lampe DMX/RGB qui repart
-  éteinte après un redémarrage ou une mise à jour de Home Assistant. La restauration
-  est fiable ici puisque seul Home Assistant pilote ces sorties (le programme interne
-  de l'automate est suspendu).
-- **Option activable/désactivable** « Restaurer l'état après redémarrage » dans les
-  réglages de l'intégration (Configurer), activée par défaut. Les relais et lampes
-  on/off ne sont pas concernés : ils continuent de relire leur état réel sur
-  l'automate au démarrage.
+### Added
+- **State restore after a restart** for **shutters** (last estimated position) and
+  **DALI/DMX lights** (on/off, brightness, RGB color), via `RestoreEntity`. No more
+  shutter stuck at "unknown" or DMX/RGB light coming back off after a restart or an
+  update of Home Assistant. The restore is accurate here since only Home Assistant
+  drives these outputs (the PLC's internal program is suspended).
+- **Toggle option** "Restore state after restart" in the integration settings
+  (Configure), enabled by default. Relays and on/off lights are not affected: they
+  keep re-reading their real state from the PLC at startup.
 
 ## [1.0.6] - 2026-08-24
 
-### Corrigé
-- **Registres de climatisation, pompes, électrovannes et contacteurs apparaissaient
-  comme des lumières.** Dans le fichier Calaos, ces sorties ont `gui_type="light"`
-  mais un attribut `io_style` distinct (`heater`, `pump`, `boiler`, `outlet`) que
-  l'importateur ignorait. Il en tient désormais compte : ces sorties sont créées
-  comme **`switch`** (avec la classe *prise* pour `outlet`, et une icône adaptée pour
-  radiateur/pompe/chauffe-eau), tandis que les vraies lumières restent des `light`.
+### Fixed
+- **Air-conditioning registers, pumps, solenoid valves and contactors showed up as
+  lights.** In the Calaos file these outputs have `gui_type="light"` but a separate
+  `io_style` attribute (`heater`, `pump`, `boiler`, `outlet`) that the importer
+  ignored. It now honors it: those outputs are created as **`switch`** entities
+  (with the *outlet* device class for `outlet`, and a fitting icon for
+  radiator/pump/boiler), while genuine lights stay as `light`.
 
-### Note de migration
-- Après mise à jour, les entités concernées changent de domaine (`light.*` →
-  `switch.*`) : leur `entity_id` change et les anciennes entités `light.*`
-  deviennent orphelines. Pense à mettre à jour tes tableaux de bord et
-  automatisations, et à supprimer les entités `light.*` devenues indisponibles.
+### Migration note
+- After the update, the affected entities change domain (`light.*` → `switch.*`):
+  their `entity_id` changes and the old `light.*` entities become orphaned. Update
+  your dashboards and automations, and remove the `light.*` entities that became
+  unavailable.
 
 ## [1.0.5] - 2026-08-24
 
-### Modifié
-- Version de maintenance : montée de version, sans changement fonctionnel depuis
-  la 1.0.4.
+### Changed
+- Maintenance release: version bump only, no functional change since 1.0.4.
 
 ## [1.0.4] - 2026-08-24
 
-### Corrigé
-- **Lumières DALL qui repassaient à « éteint » ~1-2 min après l'allumage.**
-  L'état DALI était relu périodiquement via `WAGO_DALI_GET`, or cette relecture
-  renvoie « éteint » (la requête est peu fiable, et impossible pour du DMX en
-  adresse ≥ 100), ce qui écrasait l'état réel. Conformément à Calaos, l'état DALI
-  n'est plus interrogé en boucle : il est lu **une seule fois au démarrage** (et
-  uniquement pour les vraies adresses DALI 1-64), puis suivi de façon **optimiste**.
-  Comme le programme interne de l'automate est suspendu, une lumière DALI ne peut
-  changer que depuis Home Assistant : l'état optimiste est donc exact.
+### Fixed
+- **DALI lights switching back to "off" ~1-2 min after being turned on.** The DALI
+  state was polled periodically via `WAGO_DALI_GET`, but that read returns "off"
+  (the query is unreliable, and impossible for DMX at address >= 100), which
+  overwrote the real state. In line with Calaos, DALI state is no longer polled in a
+  loop: it is read **once at startup** (and only for genuine DALI addresses 1-64),
+  then tracked **optimistically**. Since the PLC's internal program is suspended, a
+  DALI light can only be changed from Home Assistant, so the optimistic state is
+  exact.
 
 ## [1.0.3] - 2026-08-24
 
-### Corrigé
-- **Entrées instables : des clics étaient perdus par intermittence** (issue #2).
-  Le socket d'écoute UDP (port 4646) était ouvert avec `SO_REUSEPORT` ; sous Linux,
-  le noyau répartit alors les datagrammes entrants entre tous les sockets liés au
-  même port. Après un rechargement, une mise à jour ou un redémarrage, un ancien
-  socket restait parfois lié et « volait » une partie des paquets `WAGO INT`, qui
-  étaient silencieusement perdus. Le socket est désormais **exclusif** : tous les
-  paquets d'entrée arrivent à la seule instance qui écoute.
-- Fermeture propre du socket UDP au déchargement (attente de sa libération réelle)
-  et ré-essai du binding au démarrage, pour qu'un rechargement ne crée jamais deux
-  sockets en concurrence sur le port.
+### Fixed
+- **Unstable inputs: clicks were lost intermittently** (issue #2). The UDP listener
+  socket (port 4646) was opened with `SO_REUSEPORT`; on Linux the kernel then
+  spreads incoming datagrams across every socket bound to that port. After a reload,
+  an update or a restart, an old socket sometimes stayed bound and "stole" a share
+  of the `WAGO INT` packets, which were silently lost. The socket is now
+  **exclusive**: every input packet reaches the single listening instance.
+- Clean close of the UDP socket on unload (waiting for its actual release) and a
+  bind retry at startup, so a reload never leaves two sockets competing for the port.
 
-### Ajouté
-- Émission d'un **événement de bus** `wago2haddon_event` à chaque action décodée
-  (clic simple/double/triple, appui long), en plus de l'entité `event`. Un
-  déclencheur `event` sur cet événement est totalement fiable (jamais dédupliqué)
-  et constitue une alternative robuste pour les automatisations.
-- Traitement défensif de plusieurs messages par datagramme (aucun message n'est
-  ignoré si l'automate venait à en grouper).
-- Annulation propre des minuteries du décodeur d'entrées à la suppression d'une
-  entité (évite qu'un événement se déclenche après un rechargement).
+### Added
+- A **bus event** `wago2haddon_event` is fired on every decoded action (single /
+  double / triple click, long press), in addition to the `event` entity. An `event`
+  trigger on this event is fully reliable (never de-duplicated) and is a robust
+  alternative for automations.
+- Defensive handling of multiple messages per datagram (no message dropped if the
+  PLC were to batch them).
+- Clean cancellation of the input decoder timers when an entity is removed (avoids
+  an event firing after a reload).
 
 ## [1.0.2]
 
-### Ajouté
-- **Version du programme Calaos** installé sur l'automate, lue via la commande UDP
-  `WAGO_GET_VERSION` : affichée sur la page de l'appareil (champ « Version
-  logicielle ») et exposée comme capteur de diagnostic, rafraîchie à chaque
-  reconnexion.
-- **Capteur de connectivité En ligne / Hors ligne** (`binary_sensor`, classe
-  *connectivité*), basé sur une sonde Modbus fiable exécutée périodiquement.
+### Added
+- **Calaos program version** installed on the PLC, read via the UDP
+  `WAGO_GET_VERSION` command: shown on the device page ("Firmware version" field)
+  and exposed as a diagnostic sensor, refreshed on every reconnection.
+- **Online / Offline connectivity sensor** (`binary_sensor`, *connectivity* class),
+  based on a reliable Modbus probe run periodically.
 
 ## [1.0.1]
 
-### Corrigé
-- Erreur au démarrage `ModuleNotFoundError: No module named
-  'homeassistant.helpers.device_info'` (qui se manifestait par le message trompeur
-  « Platform wago2haddon.light not found »). `DeviceInfo` est désormais importé
-  depuis `homeassistant.helpers.device_registry`.
+### Fixed
+- Startup error `ModuleNotFoundError: No module named
+  'homeassistant.helpers.device_info'` (which surfaced as the misleading message
+  "Platform wago2haddon.light not found"). `DeviceInfo` is now imported from
+  `homeassistant.helpers.device_registry`.
 
 ## [1.0.0]
 
-### Ajouté
-- Première version : passerelle Home Assistant ↔ automate Wago 750-881 sous
-  programme Codesys Calaos, via Modbus/TCP (502) et UDP (4646).
-- **Entrées** TOR décodées en clic simple / double / triple / appui long
-  (entités `event` + `binary_sensor`).
-- **Sorties** TOR en `light` ou `switch` (relais, luminaires, pompes).
-- **Volets** (`WOVoletSmart`) en `cover` avec position estimée à partir des temps
-  de montée/descente en secondes.
-- **DALI** simple (variation) et **RGB** (couleur) via `WAGO_DALI_SET`.
-- **Température / analogique** (PT100/PT1000) en `sensor`, relevé périodique
-  (2 min par défaut).
-- **Suspension du programme interne** de l'automate tant que la passerelle tourne,
-  au moyen d'un heartbeat périodique (mode serveur).
-- **Import** de la configuration Calaos `io.xml` pour créer automatiquement toutes
-  les entités.
+### Added
+- First release: Home Assistant ↔ Wago 750-881 PLC bridge running the Calaos
+  Codesys program, over Modbus/TCP (502) and UDP (4646).
+- **Inputs** decoded into single / double / triple click and long press (`event` +
+  `binary_sensor` entities).
+- **Outputs** as `light` or `switch` (relays, lights, pumps).
+- **Shutters** (`WOVoletSmart`) as `cover` with position estimated from the up/down
+  travel times in seconds.
+- **DALI** single (dimming) and **RGB** (color) via `WAGO_DALI_SET`.
+- **Temperature / analog** (PT100/PT1000) as `sensor`, periodic read (2 min by
+  default).
+- **Internal program suspension** of the PLC while the gateway runs, via a periodic
+  heartbeat (server mode).
+- **Import** of the Calaos `io.xml` configuration to create all entities
+  automatically.
 
 [1.0.7]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.7
 [1.0.6]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.6
