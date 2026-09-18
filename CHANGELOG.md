@@ -47,7 +47,7 @@ and the project follows semantic versioning.
 ### Changed
 - Maintenance release: version bump only, no functional change since 1.0.4.
 
-## [1.0.4] - 2026-08-04
+## [1.0.4] - 2026-08-24
 
 ### Fixed
 - **DALI lights switching back to "off" ~1-2 min after being turned on.** The DALI
