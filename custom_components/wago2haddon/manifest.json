@@ -1,7 +1,7 @@
 {
   "domain": "wago2haddon",
   "name": "Wago2HAddon (Calaos Wago bridge)",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "documentation": "https://github.com/fredsch/Wago2HAddon",
   "issue_tracker": "https://github.com/fredsch/Wago2HAddon/issues",
   "codeowners": ["@fredsch"],
