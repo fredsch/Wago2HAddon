@@ -4,7 +4,7 @@ All notable changes to Wago2HAddon are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project follows semantic versioning.
 
-## [1.0.8] - 2026-08-24
+## [1.0.8] - 2026-09-18
 
 ### Fixed
 - **Pressing Stop during a shutter movement jumped the position straight to 0 % or
@@ -14,7 +14,7 @@ and the project follows semantic versioning.
   position is now snapped to the target only when the travel completes naturally;
   on Stop the real intermediate position is kept.
 
-## [1.0.7] - 2026-08-24
+## [1.0.7] - 2026-09-09
 
 ### Added
 - **State restore after a restart** for **shutters** (last estimated position) and
@@ -26,7 +26,7 @@ and the project follows semantic versioning.
   (Configure), enabled by default. Relays and on/off lights are not affected: they
   keep re-reading their real state from the PLC at startup.
 
-## [1.0.6] - 2026-08-24
+## [1.0.6] - 2026-09-07
 
 ### Fixed
 - **Air-conditioning registers, pumps, solenoid valves and contactors showed up as
@@ -42,12 +42,12 @@ and the project follows semantic versioning.
   your dashboards and automations, and remove the `light.*` entities that became
   unavailable.
 
-## [1.0.5] - 2026-08-24
+## [1.0.5] - 2026-09-04
 
 ### Changed
 - Maintenance release: version bump only, no functional change since 1.0.4.
 
-## [1.0.4] - 2026-08-24
+## [1.0.4] - 2026-08-04
 
 ### Fixed
 - **DALI lights switching back to "off" ~1-2 min after being turned on.** The DALI
