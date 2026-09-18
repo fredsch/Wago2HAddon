@@ -4,6 +4,16 @@ All notable changes to Wago2HAddon are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project follows semantic versioning.
 
+## [1.0.8] - 2026-08-24
+
+### Fixed
+- **Pressing Stop during a shutter movement jumped the position straight to 0 % or
+  100 %** instead of staying where the shutter actually stopped. The
+  movement-completion block that snaps a full travel to its end-stop also ran when
+  the task was cancelled by Stop, forcing the position to the original target. The
+  position is now snapped to the target only when the travel completes naturally;
+  on Stop the real intermediate position is kept.
+
 ## [1.0.7] - 2026-08-24
 
 ### Added
