@@ -157,6 +157,7 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
         else:
             return
 
+        reached_end = False
         try:
             await self._all_off()
             if direction == "open":
@@ -181,14 +182,20 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
                     (direction == "open" and self._position >= target)
                     or (direction == "close" and self._position <= target)
                 )
-                # add a safety margin so end-stops are physically reached
                 if reached and not full_travel:
+                    reached_end = True
                     break
+                # add a safety margin so end-stops are physically reached
                 if full_travel and elapsed >= full + 1.0:
+                    reached_end = True
                     break
         finally:
             await self._all_off()
             self._moving = None
-            if target in (0.0, 100.0):
+            # Only snap to the commanded target when the travel actually
+            # completed. On a STOP the task is cancelled and this block still
+            # runs, so we must keep the real intermediate position instead of
+            # jumping to 0/100.
+            if reached_end:
                 self._position = target
             self.async_write_ha_state()
