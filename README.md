@@ -1,15 +1,17 @@
-# Wago2HAddon
+# Wago2Haddon Integration
 
-**Home Assistant** ↔ **Wago 750-881** PLC bridge, for PLCs running the **Calaos
-Codesys** program. The integration speaks Calaos' native protocol (Modbus/TCP +
-UDP 4646), without MQTT or Docker, and exposes your inputs/outputs as native Home
-Assistant entities.
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
+[![GitHub Release](https://img.shields.io/github/v/release/fredsch/Wago2HAddon)](https://github.com/fredsch/Wago2HAddon/releases)
+[![Documentation](https://img.shields.io/badge/Documentation-2D963D?logo=read-the-docs&logoColor=white)](https://github.com/fredsch/Wago2HAddon/wiki)
 
-> **Terminology.** HACS distributes *custom integrations* (Python code that runs
-> inside Home Assistant), not *add-ons* in the Supervisor sense (Docker
-> containers). Wago2HAddon is therefore delivered as a **custom integration
-> installable through HACS** — the correct form to keep the permanent heartbeat
-> alive and to create native entities. The name "Wago2HAddon" is kept.
+## What is Wago2HAddon?
+The **Wago2Haddon** integration allows you to easily switch a **[Calaos](https://www.calaos.fr/)** installation based on a Wago 750-881 PLC to **Home Assistant** without using intermediary services (Docker, MQTT, API, etc.).
+The only requirement is to retrieve the current `IO.XML` file, upload it into the integration, and create the automations (rules).
+
+- For an `existing installation`, this integration is non-intrusive and allows you to switch from **[Calaos](https://www.calaos.fr/)** to **Home Assistant** and vice versa without modifying the Wago PLC programming, while maintaining fallback mode functionality.
+
+- For a `new installation`, the **Wago2Haddon** integration combined with **[Calaos Codesys](https://github.com/calaos/calaos_wago)** programming allows you to use a `Wago 750-881` PLC. 
+Unlike HA's Modbus TCP protocol, this model suffers from no latency and provides a fallback mode (during HA maintenance or a system crash).
 
 ## What the integration does
 
@@ -37,14 +39,21 @@ Assistant entities.
   (`WAGO_GET_VERSION` command). The version also appears directly on the device
   page ("Firmware version" field).
 
-## Installation via HACS
 
-1. HACS → ⋮ menu → **Custom repositories** → add this repository's URL, category
-   **Integration**.
-2. Install **Wago2HAddon**, then restart Home Assistant.
-3. **Settings → Devices & services → Add integration → Wago2HAddon**.
+## Prerequisites
+- A Wago 750-881 PLC (other possible models, but untested) equipped with [Calaos CoDeSys 2.3](https://github.com/calaos/calaos_wago) firmware. 
+- The `IO.XML` file to be retrieved using [Calaos Installer](https://www.calaos.fr/download/stable/calaos_installer/) or via SSH from the Calaos server
 
-## Configuration
+## Installation
+1. Install this integration with HACS or HACS → ⋮ menu → Custom repositories → add this repository's URL, category Integration.
+
+[![Open HACS Repository on My Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fredsch&repository=Wago2HAddon&category=integration)
+
+2. Restart Home Assistant
+
+3. Settings → Devices & services → Add integration → Wago2HAddon.
+
+4. Configure the integration :
 
 | Field | Purpose | Default |
 |-------|---------|---------|
@@ -60,14 +69,14 @@ Assistant entities.
 | Long-press threshold | Duration of a long press | 500 ms |
 | Restore state after restart | Shutters and DALI/DMX lights recover their last state | enabled |
 
+
 ### Importing the Calaos `io.xml` file
 
 The easiest path is to let the integration read your existing Calaos
-configuration. Copy your `io.xml` (e.g. `io_20260703.xml`) into Home Assistant's
-`/config` folder and point to it (e.g. `/config/io_20260703.xml`). The integration
-keeps only the **Wago** entities of the configured PLC (Calaos' MQTT, scenarios,
-cameras and internal timers are ignored). All your rooms and entities are recreated
-automatically, named `Room - Name`.
+configuration. 
+Copy your `io.xml` (e.g. `io.xml`) into Home Assistant's `/config` folder and point to it (e.g. `/config/io.xml`). 
+The integration keeps only the **Wago** entities of the configured PLC (Calaos' MQTT, scenarios, cameras and internal timers are ignored). 
+All your rooms and entities are recreated automatically, named `Room - Name`.
 
 To reload after editing the file: **⋮ → Reload** on the integration.
 
