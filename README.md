@@ -5,6 +5,9 @@
 [![Documentation](https://img.shields.io/badge/Documentation-2D963D?logo=read-the-docs&logoColor=white)](https://github.com/fredsch/Wago2HAddon/wiki)
 
 ## What is Wago2HAddon?
+
+![Inverter Sensors](docs/HA2Wago_Schema.png)  
+
 The **Wago2Haddon** integration allows you to easily switch a **[Calaos](https://www.calaos.fr/)** installation based on a Wago 750-881 PLC to **Home Assistant** without using intermediary services (Docker, MQTT, API, etc.).
 The only requirement is to retrieve the current `IO.XML` file, upload it into the integration, and create the automations (rules).
 
