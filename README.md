@@ -58,6 +58,10 @@ Unlike HA's Modbus TCP protocol, this model suffers from no latency and provides
 
 4. Configure the integration :
 
+![Inverter Sensors](docs/HA2Wago_Settings0.png) 
+
+![Inverter Sensors](docs/HA2Wago_Settings1.png)
+
 | Field | Purpose | Default |
 |-------|---------|---------|
 | PLC IP address | Wago IP | — |
@@ -74,6 +78,8 @@ Unlike HA's Modbus TCP protocol, this model suffers from no latency and provides
 
 
 ### Importing the Calaos `io.xml` file
+
+![Inverter Sensors](docs/HA2Wago_IOFile1.png) 
 
 The easiest path is to let the integration read your existing Calaos
 configuration. 
