@@ -16,6 +16,8 @@ The only requirement is to retrieve the current `IO.XML` file, upload it into th
 - For a `new installation`, the **Wago2Haddon** integration combined with **[Calaos Codesys](https://github.com/calaos/calaos_wago)** programming allows you to use a `Wago 750-881` PLC. 
 Unlike HA's Modbus TCP protocol, this model suffers from no latency and provides a fallback mode (during HA maintenance or a system crash).
 
+⚠️ **In any case, do not run `Wago2Haddon` and `Calaos Server` at the same time!** ⚠️
+
 ## What the integration does
 
 - **Digital inputs** (e.g. 750-1405 / 750-430 terminals): single click, **double
