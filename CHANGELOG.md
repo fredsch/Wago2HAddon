@@ -4,6 +4,40 @@ All notable changes to Wago2HAddon are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project follows semantic versioning.
 
+## [1.0.9] - 2026-10-01
+
+### Security
+- **UDP messages are now authenticated by source address.** The listener on port
+  4646 accepted `WAGO INT` messages from any host, so a device on the local
+  network could spoof a button press and trigger automations (e.g. a gate). Only
+  datagrams coming from the PLC's IP are processed now; others are dropped and
+  logged once per sender. Spoofed DALI/version replies are ignored as well.
+
+### Fixed
+- **Entities now follow the PLC Online/Offline state.** Only the connectivity
+  sensor used to be notified, so lights, switches, shutters and sensors could keep
+  showing "available" while the PLC was down (or stay greyed out after it came
+  back). All entities are now re-published on every availability change.
+- **States no longer drift.** Relay outputs and digital inputs were only read at
+  startup. A periodic resynchronisation (every 30 s, plus immediately when the PLC
+  comes back online) re-reads them in a few batched Modbus requests and corrects
+  any difference — e.g. outputs switched by the PLC's own program during a network
+  outage, or a lost UDP edge. A short grace period ensures a fresh command or edge
+  is never overwritten by an older read. If the PLC is unreachable the resync
+  aborts after a single request instead of timing out once per variable.
+- **A button could stay "dead" after a lost release edge.** The click decoder is
+  now silently unblocked when the line is read as released (no fake event is ever
+  emitted).
+- **Shutters: a refused command no longer moves the position on screen.** The motor
+  is now started before the position tracking begins. If the PLC does not accept
+  the command, the position is kept and an error is shown in the UI. An
+  unconfirmed STOP is also reported, since the motor may still be running.
+
+### Changed
+- On/off lights and switches report an error in the UI when the PLC refuses a
+  command, instead of failing silently.
+- Version numbering is back to three components (1.0.9 follows 1.0.8.1).
+
 ## [1.0.8] - 2026-09-18
 
 ### Fixed
@@ -116,6 +150,8 @@ and the project follows semantic versioning.
 - **Import** of the Calaos `io.xml` configuration to create all entities
   automatically.
 
+[1.0.9]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.9
+[1.0.8]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.8
 [1.0.7]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.7
 [1.0.6]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.6
 [1.0.5]: https://github.com/fredsch/Wago2HAddon/releases/tag/1.0.5

@@ -192,6 +192,12 @@ re-read their real state from the PLC at startup.
 - `iot_class: local_push`: inputs arrive in real time over UDP; only analog sensors
   are polled periodically.
 - DALI state is optimistic, read once at startup for genuine DALI addresses.
+- **State resynchronisation**: every 30 s (and right after the PLC comes back
+  online) all relay outputs and digital inputs are re-read in a few batched Modbus
+  requests. Any drift — a lost UDP edge, or outputs switched by the PLC's own
+  program during a network outage — is corrected automatically.
+- **Security**: UDP messages are only accepted from the PLC's IP address; packets
+  from any other host on the network are ignored (and logged once).
 
 ## License
 

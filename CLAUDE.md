@@ -92,6 +92,22 @@ re-checking those sources.**
 - **RestoreEntity** covers shutters + DALI/DMX lights, gated by the `restore_state`
   option (default on). On/off relays and lights instead re-read real Modbus state at
   startup and must keep doing so.
+- **UDP is authenticated by source IP.** `_handle_datagram` drops anything not
+  coming from the PLC (`_plc_ips`, resolved in `async_setup`). Never remove this:
+  port 4646 is reachable by any device on the LAN.
+- **Every entity's `async_added_to_hass` must call `super()` first.** The base
+  `WagoEntity` subscribes there to hub availability; skipping `super()` makes the
+  entity stop following Online/Offline.
+- **State resync** (`hub.async_resync`, run by the monitor loop every 30 s and on
+  reconnection) batch-reads outputs (`var + 0x200`) and inputs. Entities register
+  with `register_output_state` / `register_input_state` and MUST ignore results
+  within `RESYNC_GRACE` of their own command/edge. A transport failure aborts the
+  resync immediately; only Modbus exception responses fall back to per-var reads.
+  The input decoder is only ever *unstuck* by a resync (`sync()`), never fed a
+  synthetic press.
+- **Shutters start the motor before tracking.** `_go_to` awaits the coil writes
+  and raises `HomeAssistantError` if refused (position untouched); only then is
+  the `_track` task spawned.
 - Input entities fire both an `event` entity update **and** a `wago2haddon_event`
   bus event; keep both (the bus event is the de-dup-proof automation path).
 
@@ -141,6 +157,8 @@ You cannot `import homeassistant.*` directly. Use these instead:
 - `EntityCategory` is imported from **`homeassistant.const`** (canonical).
 - Never `reuse_port` the UDP socket (see invariants).
 - Never poll DALI state periodically.
+- Never trust a UDP datagram without checking its source IP.
+- Do not skip `super().async_added_to_hass()` in entity subclasses.
 - `manifest.json` `codeowners` must be a **list** of `@`-prefixed usernames, e.g.
   `["@fredsch"]` — a bare string fails hassfest validation.
 
