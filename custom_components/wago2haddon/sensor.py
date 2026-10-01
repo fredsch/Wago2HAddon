@@ -56,6 +56,7 @@ class WagoVersionSensor(WagoEntity, SensorEntity):
         return self._hub.sw_version
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
         # refresh once shortly after start and then hourly (cheap, UDP)
         self.async_on_remove(
             async_track_time_interval(self.hass, self._refresh_cb, timedelta(hours=1))
@@ -94,6 +95,7 @@ class WagoAnalogSensor(WagoEntity, SensorEntity):
             self._attr_native_unit_of_measurement = io.unit
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
         await self._refresh()
         self.async_on_remove(
             async_track_time_interval(self.hass, self._refresh_cb, self._scan)

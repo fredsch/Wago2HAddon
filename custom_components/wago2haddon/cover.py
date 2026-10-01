@@ -7,6 +7,7 @@ estimated from the configured full-travel times (time_up / time_down).
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ from homeassistant.components.cover import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -25,6 +27,8 @@ from .const import DOMAIN
 from .entity import WagoEntity
 from .hub import WagoHub
 from .models import ShutterOutput
+
+_LOGGER = logging.getLogger(__name__)
 
 _TICK = 0.2  # seconds between position updates while moving
 
@@ -100,15 +104,21 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
         return self._moving == "close"
 
     # -- coil helpers ---------------------------------------------------------
-    async def _set_up(self, on: bool) -> None:
-        await self._hub.set_digital_output(self._io.var_up, self._io.wago_841, on)
+    async def _set_up(self, on: bool) -> bool:
+        return await self._hub.set_digital_output(
+            self._io.var_up, self._io.wago_841, on
+        )
 
-    async def _set_down(self, on: bool) -> None:
-        await self._hub.set_digital_output(self._io.var_down, self._io.wago_841, on)
+    async def _set_down(self, on: bool) -> bool:
+        return await self._hub.set_digital_output(
+            self._io.var_down, self._io.wago_841, on
+        )
 
-    async def _all_off(self) -> None:
-        await self._set_up(False)
-        await self._set_down(False)
+    async def _all_off(self) -> bool:
+        # always try both coils, even if the first write fails
+        up_ok = await self._set_up(False)
+        down_ok = await self._set_down(False)
+        return up_ok and down_ok
 
     # -- commands -------------------------------------------------------------
     async def async_open_cover(self, **kwargs: Any) -> None:
@@ -122,9 +132,14 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._cancel_task()
-        await self._all_off()
+        stopped = await self._all_off()
         self._moving = None
         self.async_write_ha_state()
+        if not stopped:
+            raise HomeAssistantError(
+                f"{self.name}: STOP not confirmed by the Wago PLC "
+                f"{self._hub.host} - the motor may still be running"
+            )
 
     async def async_will_remove_from_hass(self) -> None:
         await self._cancel_task()
@@ -140,10 +155,14 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
         self._task = None
 
     async def _go_to(self, target: float) -> None:
-        await self._cancel_task()
-        self._task = self.hass.async_create_task(self._run(target))
+        """Start the motor, then track the position in a background task.
 
-    async def _run(self, target: float) -> None:
+        The motor is started HERE, before any timing begins: if the PLC does
+        not accept the command, the position is left untouched (the shutter
+        has not moved) and the error is shown to the user, instead of a
+        position that keeps "moving" on screen while nothing happens.
+        """
+        await self._cancel_task()
         target = max(0.0, min(100.0, target))
         # Unknown position: assume the worst case so a full travel calibrates it.
         start_pos = self._position
@@ -157,17 +176,32 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
         else:
             return
 
+        started = await self._all_off()
+        if started:
+            started = await (
+                self._set_up(True) if direction == "open" else self._set_down(True)
+            )
+        if not started:
+            await self._all_off()  # best effort: never leave a coil energised
+            self._moving = None
+            self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"{self.name}: the Wago PLC {self._hub.host} did not accept the "
+                "command (unreachable?) - the shutter was not moved"
+            )
+
+        self._moving = direction
+        self.async_write_ha_state()
+        self._task = self.hass.async_create_task(
+            self._track(target, start_pos, direction, full)
+        )
+
+    async def _track(
+        self, target: float, start_pos: float, direction: str, full: float
+    ) -> None:
+        """Estimate the position from elapsed time while the motor runs."""
         reached_end = False
         try:
-            await self._all_off()
-            if direction == "open":
-                await self._set_up(True)
-            else:
-                await self._set_down(True)
-
-            self._moving = direction
-            self.async_write_ha_state()
-
             start_time = time.monotonic()
             full_travel = target in (0.0, 100.0)
             while True:
@@ -190,7 +224,11 @@ class WagoShutter(WagoEntity, CoverEntity, RestoreEntity):
                     reached_end = True
                     break
         finally:
-            await self._all_off()
+            if not await self._all_off():
+                _LOGGER.error(
+                    "%s: could not switch the motor off on the Wago PLC %s",
+                    self.name, self._hub.host,
+                )
             self._moving = None
             # Only snap to the commanded target when the travel actually
             # completed. On a STOP the task is cancelled and this block still

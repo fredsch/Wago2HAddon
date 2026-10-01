@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
-from .entity import WagoEntity
+from .entity import WagoDigitalOutputEntity, WagoEntity
 from .hub import WagoHub
 from .models import DaliOutput, DaliRGBOutput, DigitalOutput
 
@@ -37,32 +37,11 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class WagoDigitalLight(WagoEntity, LightEntity):
+class WagoDigitalLight(WagoDigitalOutputEntity, LightEntity):
     """A simple on/off light driven by a Wago digital output coil."""
 
     _attr_color_mode = ColorMode.ONOFF
     _attr_supported_color_modes = {ColorMode.ONOFF}
-
-    def __init__(self, hub: WagoHub, io: DigitalOutput) -> None:
-        super().__init__(hub, io)
-        self._io: DigitalOutput = io
-        self._attr_is_on = False
-
-    async def async_added_to_hass(self) -> None:
-        state = await self._hub.read_digital_output(self._io.var)
-        if state is not None:
-            self._attr_is_on = state
-            self.async_write_ha_state()
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        if await self._hub.set_digital_output(self._io.var, self._io.wago_841, True):
-            self._attr_is_on = True
-            self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        if await self._hub.set_digital_output(self._io.var, self._io.wago_841, False):
-            self._attr_is_on = False
-            self.async_write_ha_state()
 
 
 class WagoDaliLight(WagoEntity, LightEntity, RestoreEntity):

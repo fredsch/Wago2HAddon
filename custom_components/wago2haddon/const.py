@@ -45,7 +45,11 @@ MSG_INPUT_PREFIX = "WAGO INT"
 MSG_KNX_PREFIX = "WAGO KNX"
 
 # Connectivity monitor: interval (s) between Modbus reachability probes
-DEFAULT_MONITOR_INTERVAL = 30.0
+DEFAULT_MONITOR_INTERVAL = 30.0  # also the state resynchronisation period
+
+# State resynchronisation (batch Modbus reads of outputs and inputs)
+RESYNC_GRACE = 3.0       # s: ignore a resync result this soon after a command/edge
+RESYNC_MAX_SPAN = 256    # max coils per batch FC1 read (protocol limit is 2000)
 
 # --- Platforms ---------------------------------------------------------------
 PLATFORMS = ["light", "switch", "cover", "sensor", "binary_sensor", "event"]
