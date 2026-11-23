@@ -4,7 +4,7 @@ All notable changes to Wago2HAddon are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project follows semantic versioning.
 
-## [1.0.8] - 2026-09-18
+## [0.0.8] - 2026-09-18
 
 ### Fixed
 - **Pressing Stop during a shutter movement jumped the position straight to 0 % or
@@ -14,7 +14,7 @@ and the project follows semantic versioning.
   position is now snapped to the target only when the travel completes naturally;
   on Stop the real intermediate position is kept.
 
-## [1.0.7] - 2026-09-09
+## [0.0.7] - 2026-09-09
 
 ### Added
 - **State restore after a restart** for **shutters** (last estimated position) and
@@ -26,7 +26,7 @@ and the project follows semantic versioning.
   (Configure), enabled by default. Relays and on/off lights are not affected: they
   keep re-reading their real state from the PLC at startup.
 
-## [1.0.6] - 2026-09-07
+## [0.0.6] - 2026-09-07
 
 ### Fixed
 - **Air-conditioning registers, pumps, solenoid valves and contactors showed up as
@@ -42,12 +42,12 @@ and the project follows semantic versioning.
   your dashboards and automations, and remove the `light.*` entities that became
   unavailable.
 
-## [1.0.5] - 2026-09-04
+## [0.0.5] - 2026-09-04
 
 ### Changed
 - Maintenance release: version bump only, no functional change since 1.0.4.
 
-## [1.0.4] - 2026-08-24
+## [0.0.4] - 2026-08-24
 
 ### Fixed
 - **DALI lights switching back to "off" ~1-2 min after being turned on.** The DALI
@@ -59,7 +59,7 @@ and the project follows semantic versioning.
   DALI light can only be changed from Home Assistant, so the optimistic state is
   exact.
 
-## [1.0.3] - 2026-08-24
+## [0.0.3] - 2026-08-24
 
 ### Fixed
 - **Unstable inputs: clicks were lost intermittently** (issue #2). The UDP listener
@@ -81,7 +81,7 @@ and the project follows semantic versioning.
 - Clean cancellation of the input decoder timers when an entity is removed (avoids
   an event firing after a reload).
 
-## [1.0.2]
+## [0.0.2]
 
 ### Added
 - **Calaos program version** installed on the PLC, read via the UDP
@@ -90,7 +90,7 @@ and the project follows semantic versioning.
 - **Online / Offline connectivity sensor** (`binary_sensor`, *connectivity* class),
   based on a reliable Modbus probe run periodically.
 
-## [1.0.1]
+## [0.0.1]
 
 ### Fixed
 - Startup error `ModuleNotFoundError: No module named
@@ -98,7 +98,7 @@ and the project follows semantic versioning.
   "Platform wago2haddon.light not found"). `DeviceInfo` is now imported from
   `homeassistant.helpers.device_registry`.
 
-## [1.0.0]
+## [0.0.0]
 
 ### Added
 - First release: Home Assistant ↔ Wago 750-881 PLC bridge running the Calaos
