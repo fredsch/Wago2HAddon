@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, RESYNC_GRACE
 from .entity import WagoEntity
 from .hub import WagoHub
 from .input_decoder import InputDecoder
@@ -36,7 +36,6 @@ class WagoInputEvent(WagoEntity, EventEntity):
     ) -> None:
         super().__init__(hub, io)
         self._io: DigitalInput = io
-        self._unregister: Callable[[], None] | None = None
         self._decoder = InputDecoder(
             io.kind,
             emit=self._emit,
@@ -72,9 +71,17 @@ class WagoInputEvent(WagoEntity, EventEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        self._unregister = self._hub.register_input(self._io.var, self._decoder.feed)
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._hub.register_input(self._io.var, self._decoder.feed)
+        )
+        self.async_on_remove(
+            self._hub.register_input_state(self._io.var, self._on_resync)
+        )
+
+    @callback
+    def _on_resync(self, state: bool) -> None:
+        self._decoder.sync(state, RESYNC_GRACE)
 
     async def async_will_remove_from_hass(self) -> None:
-        if self._unregister:
-            self._unregister()
         self._decoder.cancel_all()

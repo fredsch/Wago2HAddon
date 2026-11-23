@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import DOMAIN
+from .const import DOMAIN, UID_VERSION
 from .entity import WagoEntity
 from .hub import WagoHub
 from .models import AnalogInput, WagoIO
@@ -42,7 +42,7 @@ class WagoVersionSensor(WagoEntity, SensorEntity):
     _attr_icon = "mdi:chip"
 
     def __init__(self, hub: WagoHub) -> None:
-        io = WagoIO(io_id="calaos_version", name="version Calaos",
+        io = WagoIO(io_id=UID_VERSION, name="version Calaos",
                     io_type="version", host=hub.host)
         super().__init__(hub, io)
         self._attr_name = f"Wago {hub.host} version Calaos"
@@ -56,11 +56,14 @@ class WagoVersionSensor(WagoEntity, SensorEntity):
         return self._hub.sw_version
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
         # refresh once shortly after start and then hourly (cheap, UDP)
         self.async_on_remove(
             async_track_time_interval(self.hass, self._refresh_cb, timedelta(hours=1))
         )
-        if self._hub.sw_version is None:
+        # skip the 3 s UDP timeout at startup when the PLC is offline; the hub
+        # fetches the version itself as soon as the PLC comes back
+        if self._hub.sw_version is None and self._hub.available:
             await self._refresh()
 
     @callback
@@ -68,9 +71,7 @@ class WagoVersionSensor(WagoEntity, SensorEntity):
         self.hass.async_create_task(self._refresh())
 
     async def _refresh(self) -> None:
-        version = await self._hub.get_version()
-        if version and version != self._hub.sw_version:
-            self._hub.sw_version = version
+        self._hub.set_sw_version(await self._hub.get_version())
         self.async_write_ha_state()
 
 
@@ -94,10 +95,15 @@ class WagoAnalogSensor(WagoEntity, SensorEntity):
             self._attr_native_unit_of_measurement = io.unit
 
     async def async_added_to_hass(self) -> None:
-        await self._refresh()
+        await super().async_added_to_hass()
         self.async_on_remove(
             async_track_time_interval(self.hass, self._refresh_cb, self._scan)
         )
+        # first read now, or as soon as the PLC is online (no startup stall)
+        await self.async_initial_read_when_online()
+
+    async def _async_initial_read(self) -> None:
+        await self._refresh()
 
     @callback
     def _refresh_cb(self, _now) -> None:

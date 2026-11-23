@@ -11,8 +11,9 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 
 from .calaos_import import parse_calaos_xml
 from .const import (
@@ -34,8 +35,19 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_UDP_PORT,
     DOMAIN,
+    UID_CONNECTIVITY,
+    UID_VERSION,
 )
-from .hub import WagoHub
+from .hub import UdpBindError, WagoHub
+from .models import (
+    AnalogInput,
+    DaliOutput,
+    DaliRGBOutput,
+    DigitalInput,
+    DigitalOutput,
+    ShutterOutput,
+    WagoIO,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,8 +61,74 @@ PLATFORMS = [
 ]
 
 
+def expected_entities(host: str, devices: list[WagoIO]) -> set[tuple[str, str]]:
+    """Return the (platform domain, unique_id) pairs the integration creates."""
+    expected = {
+        (Platform.BINARY_SENSOR, f"{host}_{UID_CONNECTIVITY}"),
+        (Platform.SENSOR, f"{host}_{UID_VERSION}"),
+    }
+    for io in devices:
+        uid = f"{host}_{io.io_id}"
+        if isinstance(io, DigitalInput):
+            expected.add((Platform.BINARY_SENSOR, uid))
+            expected.add((Platform.EVENT, uid))
+        elif isinstance(io, DigitalOutput):
+            expected.add((Platform.LIGHT if io.as_light else Platform.SWITCH, uid))
+        elif isinstance(io, ShutterOutput):
+            expected.add((Platform.COVER, uid))
+        elif isinstance(io, (DaliOutput, DaliRGBOutput)):
+            expected.add((Platform.LIGHT, uid))
+        elif isinstance(io, AnalogInput):
+            expected.add((Platform.SENSOR, uid))
+    return expected
+
+
+@callback
+def _async_remove_stale_entities(
+    hass: HomeAssistant, entry: ConfigEntry, host: str, devices: list[WagoIO]
+) -> None:
+    """Remove registry entries no longer produced by the current io.xml.
+
+    Covers IO points deleted from io.xml and entities whose platform changed
+    (e.g. the light.* -> switch.* move of 0.0.6). Only called after a
+    successful, non-empty import, so a missing or broken file never wipes
+    the entities.
+    """
+    expected = expected_entities(host, devices)
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if (reg_entry.domain, reg_entry.unique_id) not in expected:
+            _LOGGER.info(
+                "Removing %s: no longer present in the Calaos io.xml",
+                reg_entry.entity_id,
+            )
+            registry.async_remove(reg_entry.entity_id)
+
+
+@callback
+def _async_move_host_out_of_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Migrate a PLC address set through the old options form into ``data``.
+
+    Up to 0.0.9 the address could be changed in the options; it is now only
+    changed via "Reconfigure". Entities were keyed on that option address, so
+    it simply becomes the entry's address (and unique_id): nothing changes
+    for existing entities.
+    """
+    if CONF_HOST not in entry.options:
+        return
+    options = dict(entry.options)
+    host = options.pop(CONF_HOST)
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_HOST: host},
+        options=options,
+        unique_id=host,
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Wago2HAddon from a config entry."""
+    _async_move_host_out_of_options(hass, entry)
     data = {**entry.data, **entry.options}
     host = data[CONF_HOST]
 
@@ -65,10 +143,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await hub.async_setup()
+    except UdpBindError as err:
+        # No heartbeat possible: do not start at all rather than letting the
+        # PLC's internal program and Home Assistant both drive the outputs.
+        # Home Assistant retries automatically.
+        raise ConfigEntryNotReady(str(err)) from err
     except Exception as err:  # noqa: BLE001
         raise ConfigEntryNotReady(f"Could not start Wago hub: {err}") from err
 
-    devices = []
+    devices: list[WagoIO] = []
     xml_path = data.get(CONF_XML_PATH)
     if xml_path:
         try:
@@ -77,6 +160,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Failed to parse Calaos XML %s: %s", xml_path, err)
+        else:
+            if devices:
+                _async_remove_stale_entities(hass, entry, host, devices)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "hub": hub,

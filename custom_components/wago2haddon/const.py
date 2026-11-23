@@ -10,7 +10,6 @@ CONF_UDP_PORT = "udp_port"
 CONF_LOCAL_IP = "local_ip"
 CONF_HEARTBEAT_INTERVAL = "heartbeat_interval"
 CONF_SCAN_INTERVAL = "scan_interval"
-CONF_WAGO_841 = "wago_841"
 CONF_XML_PATH = "calaos_xml_path"
 CONF_MULTI_CLICK_MS = "multi_click_ms"
 CONF_LONG_PRESS_MS = "long_press_ms"
@@ -21,7 +20,6 @@ DEFAULT_MODBUS_PORT = 502
 DEFAULT_UDP_PORT = 4646  # WAGO_LISTEN_PORT in calaos_base (src/lib/Utils.h)
 DEFAULT_HEARTBEAT_INTERVAL = 10.0  # seconds; PLC standalone timeout is 30 s
 DEFAULT_SCAN_INTERVAL = 120  # seconds; analog/temperature polling (user requirement)
-DEFAULT_WAGO_841 = True  # 750-8xx family (750-881 included)
 DEFAULT_MULTI_CLICK_MS = 350
 DEFAULT_LONG_PRESS_MS = 500
 DEFAULT_RESTORE_STATE = True  # restore last state of covers & DALI/DMX lights
@@ -29,7 +27,7 @@ DEFAULT_RESTORE_STATE = True  # restore last state of covers & DALI/DMX lights
 # --- Modbus address offsets (must match calaos_base exactly) -----------------
 # src/lib/Utils.h
 WAGO_841_START_ADDRESS = 4096  # added to output coil address when writing
-WAGO_KNX_START_ADDRESS = 6144
+WAGO_KNX_START_ADDRESS = 6144  # added to the address of KNX outputs (750-849)
 # WagoExternProc_main.cpp: read_output_bits/read_output_words add this offset
 OUTPUT_READBACK_OFFSET = 0x200  # 512
 
@@ -42,13 +40,27 @@ CMD_DALI_SET = "WAGO_DALI_SET"
 CMD_DALI_GET = "WAGO_DALI_GET"
 CMD_GET_VERSION = "WAGO_GET_VERSION"
 MSG_INPUT_PREFIX = "WAGO INT"
-MSG_KNX_PREFIX = "WAGO KNX"
 
 # Connectivity monitor: interval (s) between Modbus reachability probes
-DEFAULT_MONITOR_INTERVAL = 30.0
+DEFAULT_MONITOR_INTERVAL = 30.0  # also the state resynchronisation period
 
-# --- Platforms ---------------------------------------------------------------
-PLATFORMS = ["light", "switch", "cover", "sensor", "binary_sensor", "event"]
+# State resynchronisation (batch Modbus reads of outputs and inputs)
+RESYNC_GRACE = 3.0       # s: ignore a resync result this soon after a command/edge
+RESYNC_MAX_SPAN = 256    # max coils per batch FC1 read (protocol limit is 2000)
+
+# UDP listener: bind attempts (0.5 s apart) before giving up. A previous socket
+# may still hold the port for a moment during a reload.
+UDP_BIND_ATTEMPTS = 10
+
+# --- Covers --------------------------------------------------------------------
+# Pause with both coils off before reversing the motor direction (motor safety).
+COVER_REVERSE_DELAY = 0.5  # seconds
+# Minimum delay between two state writes while a shutter moves (recorder load).
+COVER_STATE_WRITE_INTERVAL = 1.0  # seconds
+
+# --- Fixed unique-id suffixes of the per-PLC diagnostic entities ---------------
+UID_CONNECTIVITY = "connectivity"
+UID_VERSION = "calaos_version"
 
 # --- Calaos IO type names ----------------------------------------------------
 T_INPUT_BP = "WIDigitalBP"

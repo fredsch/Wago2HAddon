@@ -73,7 +73,6 @@ Unlike HA's Modbus TCP protocol, this model suffers from no latency and provides
 | Local IP | Destination for input notifications | auto-detected |
 | Analog/temperature interval | Read cadence | 120 s |
 | Heartbeat interval | Heartbeat cadence | 10 s |
-| 750-8xx family | Output address offset (+4096) | true |
 | Max delay between clicks | Double/triple window | 350 ms |
 | Long-press threshold | Duration of a long press | 500 ms |
 | Restore state after restart | Shutters and DALI/DMX lights recover their last state | enabled |
@@ -89,7 +88,16 @@ Copy your `io.xml` (e.g. `io.xml`) into Home Assistant's `/config` folder and po
 The integration keeps only the **Wago** entities of the configured PLC (Calaos' MQTT, scenarios, cameras and internal timers are ignored). 
 All your rooms and entities are recreated automatically, named `Room - Name`.
 
-To reload after editing the file: **⋮ → Reload** on the integration.
+To reload after editing the file: **⋮ → Reload** on the integration. Entities
+of IO points removed from the file are deleted automatically at that moment
+(only after a successful import: a missing or broken file never deletes
+anything).
+
+The output address offset (+4096 for the 750-8xx family) comes from each
+output's `wago_841` attribute in `io.xml` (default `true`).
+
+To change the PLC IP address later, use **⋮ → Reconfigure** on the
+integration: entities keep their ids, names and history.
 
 ## Internal-program suspension mechanism
 
@@ -192,7 +200,14 @@ re-read their real state from the PLC at startup.
 - `iot_class: local_push`: inputs arrive in real time over UDP; only analog sensors
   are polled periodically.
 - DALI state is optimistic, read once at startup for genuine DALI addresses.
+- **State resynchronisation**: every 30 s (and right after the PLC comes back
+  online) all relay outputs and digital inputs are re-read in a few batched Modbus
+  requests. Any drift — a lost UDP edge, or outputs switched by the PLC's own
+  program during a network outage — is corrected automatically.
+- **Security**: UDP messages are only accepted from the PLC's IP address; packets
+  from any other host on the network are ignored (and logged once).
 
 ## License
 
-GPLv3, like the Calaos project whose protocol is re-implemented here.
+GPLv3, like the Calaos project whose protocol is re-implemented here: see
+[LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for the copyright notice.

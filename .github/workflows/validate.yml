@@ -1,0 +1,45 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: Hassfest (Home Assistant manifest & translations)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # The brand images ship inside the integration (brand/ folder),
+          # not in the home-assistant/brands repository.
+          ignore: brands
+
+  lint-test:
+    name: Ruff + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install tools
+        run: pip install ruff pytest
+      - name: Byte-compile
+        run: python -m py_compile custom_components/wago2haddon/*.py
+      - name: Ruff
+        run: ruff check .
+      - name: Unit tests (Home-Assistant-free modules)
+        run: pytest -v

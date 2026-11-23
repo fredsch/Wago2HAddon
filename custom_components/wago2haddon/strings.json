@@ -12,10 +12,16 @@
           "local_ip": "Local IP for the heartbeat (optional, auto-detected)",
           "scan_interval": "Analog/temperature polling interval (s)",
           "heartbeat_interval": "Heartbeat interval (s)",
-          "wago_841": "PLC is 750-8xx family (750-881)",
           "multi_click_ms": "Max delay between clicks (ms)",
           "long_press_ms": "Long-press threshold (ms)",
           "restore_state": "Restore last state of covers and DALI/DMX lights after a restart"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the PLC address",
+        "description": "Entities, their ids and their history are kept: only the address used to reach the PLC changes.",
+        "data": {
+          "host": "PLC IP address"
         }
       }
     },
@@ -23,7 +29,9 @@
       "xml_not_found": "The io.xml file was not found at this path."
     },
     "abort": {
-      "already_configured": "This PLC is already configured."
+      "already_configured": "This PLC is already configured.",
+      "reconfigure_successful": "The PLC address was updated.",
+      "migration_failed": "Entities with the new address already exist (left over from an old setup). Remove them, then try again."
     }
   },
   "options": {
@@ -31,14 +39,12 @@
       "init": {
         "title": "Wago2HAddon settings",
         "data": {
-          "host": "PLC IP address",
           "modbus_port": "Modbus/TCP port",
           "udp_port": "Calaos UDP port",
           "calaos_xml_path": "Path to the Calaos io.xml (optional)",
           "local_ip": "Local IP for the heartbeat (optional, auto-detected)",
           "scan_interval": "Analog/temperature polling interval (s)",
           "heartbeat_interval": "Heartbeat interval (s)",
-          "wago_841": "PLC is 750-8xx family (750-881)",
           "multi_click_ms": "Max delay between clicks (ms)",
           "long_press_ms": "Long-press threshold (ms)",
           "restore_state": "Restore last state of covers and DALI/DMX lights after a restart"

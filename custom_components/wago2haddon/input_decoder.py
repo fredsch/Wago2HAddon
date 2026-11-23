@@ -48,6 +48,7 @@ class InputDecoder:
         self._long_delay = long_press_ms / 1000.0
 
         self._pressed = False
+        self._last_edge = 0.0
         self._click_count = 0
         self._press_time = 0.0
         self._long_fired = False
@@ -67,6 +68,7 @@ class InputDecoder:
     # -- public API -----------------------------------------------------------
     def feed(self, state: bool) -> None:
         """Feed a raw edge (True = pressed / closed, False = released)."""
+        self._last_edge = time.monotonic()
         if state and not self._pressed:
             self._on_press()
         elif not state and self._pressed:
@@ -132,6 +134,22 @@ class InputDecoder:
         elif self._kind == "long":
             base += [EV_LONG]
         return base
+
+    def sync(self, state: bool, grace: float = 3.0) -> None:
+        """Reconcile with the real line state read over Modbus, silently.
+
+        If a release edge was lost, the decoder would stay "pressed" and ignore
+        every following press (button dead until the next release). When the
+        line is actually open, clear that stuck state WITHOUT emitting any
+        event. A line seen closed is never turned into a press: a fake click
+        is worse than a missed one.
+        """
+        if time.monotonic() - self._last_edge < grace:
+            return
+        if not state and self._pressed:
+            self._pressed = False
+            self._long_fired = False
+            self._cancel("_cancel_long")
 
     def cancel_all(self) -> None:
         """Cancel any pending timers (call when the entity is removed)."""

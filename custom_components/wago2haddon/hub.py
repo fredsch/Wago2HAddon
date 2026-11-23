@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Callable
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CMD_DALI_GET,
@@ -17,14 +18,21 @@ from .const import (
     CMD_HEARTBEAT,
     CMD_SET_SERVER_IP,
     DEFAULT_MONITOR_INTERVAL,
+    DOMAIN,
     MSG_INPUT_PREFIX,
     MODBUS_SLAVE_ID,
     OUTPUT_READBACK_OFFSET,
-    WAGO_841_START_ADDRESS,
+    RESYNC_MAX_SPAN,
+    UDP_BIND_ATTEMPTS,
 )
+from .helpers import output_address, readback_addresses
 from .modbus_tcp import ModbusError, ModbusTcpClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class UdpBindError(Exception):
+    """The UDP listener port could not be bound."""
 
 
 def detect_local_ip(target: str) -> str | None:
@@ -92,8 +100,18 @@ class WagoHub:
         self._heartbeat_task: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
 
-        # var -> list of callbacks(state: bool) for input dispatch
+        # var -> list of callbacks(state: bool) for input dispatch (UDP edges)
         self._input_listeners: dict[int, list[Callable[[bool], None]]] = {}
+
+        # var -> callbacks(state) receiving periodic resync results (Modbus)
+        self._output_state_watchers: dict[int, list[Callable[[bool], None]]] = {}
+        self._input_state_watchers: dict[int, list[Callable[[bool], None]]] = {}
+        self._resync_lock = asyncio.Lock()
+
+        # Only datagrams coming from the PLC itself are trusted. Resolved to IP
+        # address(es) in async_setup(); the configured host is used until then.
+        self._plc_ips: set[str] = {host}
+        self._rejected_ips: set[str] = set()
 
         # availability change subscribers (connectivity sensor, etc.)
         self._availability_listeners: list[Callable[[bool], None]] = []
@@ -111,12 +129,29 @@ class WagoHub:
 
     # -- lifecycle ------------------------------------------------------------
     async def async_setup(self) -> None:
-        """Open sockets, start heartbeat. Never raises on PLC being offline."""
+        """Open sockets and start the heartbeat.
+
+        Does not raise when the PLC is merely offline (Modbus unreachable), but
+        raises :class:`UdpBindError` when the UDP port cannot be bound: without
+        it no heartbeat can be sent, so the PLC would resume its internal
+        program while Home Assistant also drives the outputs.
+        """
         with contextlib.suppress(ModbusError):
             await self._modbus.connect()
             self.available = True
 
         loop = self.hass.loop
+
+        # Resolve the PLC address so incoming datagrams can be authenticated
+        # by source IP (the host may have been entered as a hostname).
+        try:
+            infos = await loop.getaddrinfo(self.host, None, family=socket.AF_INET)
+            resolved = {info[4][0] for info in infos}
+            if resolved:
+                self._plc_ips = resolved
+        except OSError as err:
+            _LOGGER.debug("Could not resolve PLC host %s: %s", self.host, err)
+
         # Bind a SINGLE exclusive socket to receive the PLC's input packets.
         #
         # IMPORTANT: do NOT use reuse_port. On Linux SO_REUSEPORT makes the
@@ -127,7 +162,8 @@ class WagoHub:
         # bind guarantees every packet reaches this one socket.
         self._udp_closed.clear()
         self._udp_transport = None
-        for attempt in range(6):
+        last_err: OSError | None = None
+        for attempt in range(UDP_BIND_ATTEMPTS):
             try:
                 self._udp_transport, _ = await loop.create_datagram_endpoint(
                     lambda: _UdpProtocol(self._handle_datagram, self._udp_closed.set),
@@ -137,15 +173,21 @@ class WagoHub:
             except OSError as err:
                 # Port still held by the previous socket during a reload; wait
                 # for it to be released, then retry.
-                _LOGGER.debug("UDP bind attempt %d/6 failed: %s", attempt + 1, err)
+                last_err = err
+                _LOGGER.debug(
+                    "UDP bind attempt %d/%d failed: %s",
+                    attempt + 1, UDP_BIND_ATTEMPTS, err,
+                )
                 await asyncio.sleep(0.5)
         if self._udp_transport is None:
-            _LOGGER.warning(
-                "Could not bind UDP port %d; input events and DALI state will be "
-                "unavailable, but Modbus control still works. Another process may "
-                "be using the port (a running Calaos server, or a previous "
-                "instance that did not release it).",
-                self.udp_port,
+            # Refuse to run half-way: no UDP socket means no heartbeat, so the
+            # PLC would resume its internal program and fight Home Assistant
+            # for the outputs. Home Assistant retries the setup automatically.
+            await self._modbus.close()
+            self.available = False
+            raise UdpBindError(
+                f"UDP port {self.udp_port} is already in use (a running Calaos "
+                f"server, or another program?): {last_err}"
             )
         self._heartbeat_task = loop.create_task(self._heartbeat_loop())
         self._monitor_task = loop.create_task(self._monitor_loop())
@@ -153,7 +195,7 @@ class WagoHub:
         # Best-effort: read the Calaos program version so it can be shown on the
         # device page. Non-blocking beyond a short timeout.
         if self.available:
-            self.sw_version = await self.get_version()
+            self.set_sw_version(await self.get_version())
 
         _LOGGER.info(
             "Wago hub %s ready (local_ip=%s, udp=%d, version=%s)",
@@ -188,14 +230,25 @@ class WagoHub:
             await asyncio.sleep(self.heartbeat_interval)
 
     async def _monitor_loop(self) -> None:
-        """Probe the PLC over Modbus periodically to track Online/Offline."""
+        """Track Online/Offline and resynchronise entity states periodically.
+
+        Every cycle reads all watched outputs and inputs in a few batched Modbus
+        requests. This both proves the PLC is reachable and corrects any drift
+        (a lost UDP edge, or outputs changed while the PLC was running its own
+        program during a network outage).
+        """
         while True:
             await asyncio.sleep(DEFAULT_MONITOR_INTERVAL)
             try:
                 await self._modbus.connect()
-                # a cheap, side-effect-free read as a reachability probe
-                await self._modbus.read_coils(0, 1)
-                self._set_available(True)
+                if self._output_state_watchers or self._input_state_watchers:
+                    ok = await self.async_resync()
+                else:
+                    # nothing to resync: cheap side-effect-free probe
+                    await self._modbus.read_coils(0, 1)
+                    ok = True
+                # this cycle already resynced, no need for another one
+                self._set_available(ok, resync=False)
             except ModbusError:
                 self._set_available(False)
 
@@ -213,11 +266,18 @@ class WagoHub:
         return _unregister
 
     @callback
-    def _set_available(self, value: bool) -> None:
+    def _set_available(self, value: bool, resync: bool = True) -> None:
         changed = value != self.available
         self.available = value
         if not changed:
             return
+        if value:
+            _LOGGER.info("Wago PLC %s is back online", self.host)
+            if resync:
+                # states may have changed while unreachable: re-read them now
+                self.hass.async_create_task(self.async_resync())
+        else:
+            _LOGGER.warning("Wago PLC %s is unreachable", self.host)
         for cb in list(self._availability_listeners):
             try:
                 cb(value)
@@ -228,9 +288,23 @@ class WagoHub:
             self.hass.async_create_task(self._refresh_version())
 
     async def _refresh_version(self) -> None:
-        version = await self.get_version()
-        if version:
-            self.sw_version = version
+        self.set_sw_version(await self.get_version())
+
+    @callback
+    def set_sw_version(self, version: str | None) -> None:
+        """Store the Calaos program version and push it to the device page.
+
+        The device page shows the version captured in DeviceInfo when the
+        entities were created; if it is only known later (PLC offline at
+        startup), the device registry must be updated explicitly.
+        """
+        if not version or version == self.sw_version:
+            return
+        self.sw_version = version
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(identifiers={(DOMAIN, self.host)})
+        if device is not None and device.sw_version != version:
+            registry.async_update_device(device.id, sw_version=version)
 
     # -- UDP ------------------------------------------------------------------
     def _udp_send(self, command: str) -> None:
@@ -242,6 +316,16 @@ class WagoHub:
 
     @callback
     def _handle_datagram(self, text: str, src_ip: str) -> None:
+        # Security: anything on the LAN can send UDP to port 4646. Only trust
+        # the PLC, otherwise a spoofed "WAGO INT" could trigger automations.
+        if src_ip not in self._plc_ips:
+            if src_ip not in self._rejected_ips:
+                self._rejected_ips.add(src_ip)
+                _LOGGER.warning(
+                    "Ignoring UDP message from %s: not the Wago PLC (%s)",
+                    src_ip, ", ".join(sorted(self._plc_ips)),
+                )
+            return
         if text.startswith(MSG_INPUT_PREFIX):
             # "WAGO INT <var> <0|1>"
             parts = text.split()
@@ -285,6 +369,119 @@ class WagoHub:
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("input listener for var %d failed", var)
 
+    # -- state resynchronisation ----------------------------------------------
+    @staticmethod
+    def _register(
+        table: dict[int, list[Callable[[bool], None]]],
+        var: int,
+        cb: Callable[[bool], None],
+    ) -> Callable[[], None]:
+        table.setdefault(var, []).append(cb)
+
+        def _unregister() -> None:
+            listeners = table.get(var)
+            if listeners and cb in listeners:
+                listeners.remove(cb)
+                if not listeners:
+                    del table[var]
+
+        return _unregister
+
+    @callback
+    def register_output_state(
+        self, var: int, cb: Callable[[bool], None]
+    ) -> Callable[[], None]:
+        """Receive the real output state on every resync."""
+        return self._register(self._output_state_watchers, var, cb)
+
+    @callback
+    def register_input_state(
+        self, var: int, cb: Callable[[bool], None]
+    ) -> Callable[[], None]:
+        """Receive the real input line state on every resync."""
+        return self._register(self._input_state_watchers, var, cb)
+
+    @staticmethod
+    def _chunks(variables: list[int]) -> list[tuple[int, int]]:
+        """Group sorted vars into (start, count) spans of at most RESYNC_MAX_SPAN."""
+        spans: list[tuple[int, int]] = []
+        start = prev = None
+        for var in variables:
+            if start is None:
+                start = prev = var
+            elif var - start < RESYNC_MAX_SPAN:
+                prev = var
+            else:
+                spans.append((start, prev - start + 1))
+                start = prev = var
+        if start is not None:
+            spans.append((start, prev - start + 1))
+        return spans
+
+    async def _read_coil_map(self, variables: set[int], output: bool) -> dict[int, bool]:
+        """Batch-read coils for ``variables``; falls back to per-var reads."""
+        result: dict[int, bool] = {}
+        offset = OUTPUT_READBACK_OFFSET if output else 0
+        for start, count in self._chunks(sorted(variables)):
+            try:
+                bits = await self._modbus.read_coils(start + offset, count)
+                for var in variables:
+                    if start <= var < start + count:
+                        result[var] = bits[var - start]
+                continue
+            except ModbusError as err:
+                if not self._modbus.connected:
+                    # Transport failure (PLC unreachable): abort immediately
+                    # instead of timing out once per variable.
+                    raise
+                # Exception response (e.g. a gap in the address range): the
+                # link is fine, so fall back to reading this span var by var.
+                _LOGGER.debug(
+                    "batch read %d+%d (output=%s) refused, per-var fallback: %s",
+                    start, count, output, err,
+                )
+            for var in variables:
+                if start <= var < start + count:
+                    state = (
+                        await self.read_digital_output(var)
+                        if output
+                        else await self.read_digital_input(var)
+                    )
+                    if state is not None:
+                        result[var] = state
+                    elif not self._modbus.connected:
+                        raise ModbusError("connection lost during resync")
+        return result
+
+    async def async_resync(self) -> bool:
+        """Re-read every watched output and input and push the real states.
+
+        Returns True if at least one value could be read (PLC reachable).
+        """
+        async with self._resync_lock:
+            try:
+                outputs = await self._read_coil_map(
+                    set(self._output_state_watchers), True
+                )
+                inputs = await self._read_coil_map(
+                    set(self._input_state_watchers), False
+                )
+            except ModbusError as err:
+                _LOGGER.debug("resync aborted: %s", err)
+                return False
+        for table, values in (
+            (self._output_state_watchers, outputs),
+            (self._input_state_watchers, inputs),
+        ):
+            for var, state in values.items():
+                for cb in list(table.get(var, [])):
+                    try:
+                        cb(state)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception("resync listener for var %d failed", var)
+        expected = bool(self._output_state_watchers or self._input_state_watchers)
+        return bool(outputs or inputs) or not expected
+
     # -- Modbus helpers (address translation matches calaos_base) -------------
     async def read_digital_input(self, var: int) -> bool | None:
         try:
@@ -293,8 +490,10 @@ class WagoHub:
             _LOGGER.debug("read_digital_input(%d) failed: %s", var, err)
             return None
 
-    async def set_digital_output(self, var: int, wago_841: bool, value: bool) -> bool:
-        addr = var + (WAGO_841_START_ADDRESS if wago_841 else 0)
+    async def set_digital_output(
+        self, var: int, wago_841: bool, value: bool, knx: bool = False
+    ) -> bool:
+        addr = output_address(var, wago_841, knx)
         try:
             await self._modbus.write_coil(addr, value)
             self._set_available(True)
@@ -305,8 +504,11 @@ class WagoHub:
             return False
 
     async def read_digital_output(self, var: int) -> bool | None:
-        """Read an output coil back (offset 0x200, fall back to raw var)."""
-        for addr in (var + OUTPUT_READBACK_OFFSET, var):
+        """Read an output coil back (offset 0x200, fall back to raw var).
+
+        ``var`` is the read-back base address (see ``helpers.readback_base``).
+        """
+        for addr in readback_addresses(var):
             try:
                 return await self._modbus.read_coil(addr)
             except ModbusError:
@@ -339,7 +541,7 @@ class WagoHub:
             self._udp_send(f"{CMD_DALI_GET} {line} {address}")
             try:
                 text = await asyncio.wait_for(fut, timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if fut in self._dali_pending:
                     self._dali_pending.remove(fut)
                 return None
@@ -362,7 +564,7 @@ class WagoHub:
             self._udp_send(CMD_GET_VERSION)
             try:
                 text = await asyncio.wait_for(fut, timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if fut in self._version_pending:
                     self._version_pending.remove(fut)
                 return None

@@ -156,15 +156,3 @@ def parse_calaos_xml(path: str, only_host: str | None = None) -> list[WagoIO]:
     _LOGGER.info("Calaos import: %d Wago IO points from %s", len(devices), path)
     return devices
 
-
-def list_hosts(path: str) -> list[str]:
-    """Return the distinct PLC hosts referenced in the file."""
-    tree = ET.parse(path)
-    root = tree.getroot()
-    hosts: set[str] = set()
-    from .const import WAGO_TYPES
-
-    for el in root.iter():
-        if el.get("type") in WAGO_TYPES and el.get("host"):
-            hosts.add(el.get("host"))
-    return sorted(hosts)

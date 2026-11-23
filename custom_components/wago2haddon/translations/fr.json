@@ -12,10 +12,16 @@
           "local_ip": "IP locale pour le heartbeat (optionnel, auto-détectée)",
           "scan_interval": "Intervalle de lecture analogique/température (s)",
           "heartbeat_interval": "Intervalle du heartbeat (s)",
-          "wago_841": "Automate de la famille 750-8xx (750-881)",
           "multi_click_ms": "Délai max entre deux clics (ms)",
           "long_press_ms": "Seuil du clic long (ms)",
           "restore_state": "Restaurer le dernier état des volets et lumières DALI/DMX après un redémarrage"
+        }
+      },
+      "reconfigure": {
+        "title": "Changer l'adresse de l'automate",
+        "description": "Les entités, leurs identifiants et leur historique sont conservés : seule l'adresse de l'automate change.",
+        "data": {
+          "host": "Adresse IP de l'automate"
         }
       }
     },
@@ -23,7 +29,9 @@
       "xml_not_found": "Le fichier io.xml est introuvable à ce chemin."
     },
     "abort": {
-      "already_configured": "Cet automate est déjà configuré."
+      "already_configured": "Cet automate est déjà configuré.",
+      "reconfigure_successful": "L'adresse de l'automate a été mise à jour.",
+      "migration_failed": "Des entités avec la nouvelle adresse existent déjà (reste d'une ancienne installation). Supprimez-les puis réessayez."
     }
   },
   "options": {
@@ -31,14 +39,12 @@
       "init": {
         "title": "Réglages Wago2HAddon",
         "data": {
-          "host": "Adresse IP de l'automate",
           "modbus_port": "Port Modbus/TCP",
           "udp_port": "Port UDP Calaos",
           "calaos_xml_path": "Chemin du fichier Calaos io.xml (optionnel)",
           "local_ip": "IP locale pour le heartbeat (optionnel, auto-détectée)",
           "scan_interval": "Intervalle de lecture analogique/température (s)",
           "heartbeat_interval": "Intervalle du heartbeat (s)",
-          "wago_841": "Automate de la famille 750-8xx (750-881)",
           "multi_click_ms": "Délai max entre deux clics (ms)",
           "long_press_ms": "Seuil du clic long (ms)",
           "restore_state": "Restaurer le dernier état des volets et lumières DALI/DMX après un redémarrage"
