@@ -209,4 +209,5 @@ re-read their real state from the PLC at startup.
 
 ## License
 
-GPLv3, like the Calaos project whose protocol is re-implemented here.
+GPLv3, like the Calaos project whose protocol is re-implemented here: see
+[LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for the copyright notice.

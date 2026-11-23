@@ -54,6 +54,9 @@ and the project follows [semantic versioning](https://semver.org/).
 - Minimum Home Assistant version raised to 2024.4 in `hacs.json` (already
   required by the config flow).
 
+- `LICENSE` now holds the full GPLv3 text (so GitHub and HACS recognise it);
+  the project notice moved to `NOTICE`.
+
 ### Removed
 - The "750-8xx family" option. It was never used: the address offset of every
   output comes from its own `wago_841` attribute in `io.xml` (default `true`).
