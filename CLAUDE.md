@@ -21,7 +21,8 @@ custom_components/wago2haddon/
   const.py             all constants, config keys, defaults, address offsets, UDP strings
   models.py            dataclasses for parsed IO (DigitalInput/Output, ShutterOutput, Dali*, AnalogInput)
   modbus_tcp.py        self-contained async Modbus/TCP client (FC1/FC5/FC3 only)
-  hub.py               WagoHub: Modbus + UDP endpoint + heartbeat + monitor + input dispatch + DALI/version queues
+  hub.py               WagoHub: Modbus + UDP endpoint + heartbeat + monitor/resync + input dispatch + DALI/version queues
+  helpers.py           HA-free pure helpers: output/read-back address translation, cover reversal pause
   input_decoder.py     raw-edge -> single/double/triple/long decoder (state machine)
   calaos_import.py     parse Calaos io.xml -> list of models
   entity.py            WagoEntity base (unique_id, DeviceInfo with sw_version)
@@ -32,7 +33,9 @@ custom_components/wago2haddon/
   binary_sensor.py     WagoInputBinarySensor (raw line) + WagoConnectivitySensor (online/offline)
   event.py             WagoInputEvent (fires click events + a wago2haddon_event bus event)
   translations/        en.json, fr.json (+ strings.json)
-README.md  CHANGELOG.md  hacs.json  LICENSE (GPLv3)
+tests/                 pytest unit tests of the HA-free modules (no Home Assistant needed)
+.github/workflows/     CI: hassfest, HACS validation, ruff, pytest
+README.md  CHANGELOG.md  hacs.json  pyproject.toml (ruff/pytest config)  LICENSE (GPLv3)
 ```
 
 ## How it works — protocol (authoritative; must match calaos_base)
@@ -108,6 +111,24 @@ re-checking those sources.**
 - **Shutters start the motor before tracking.** `_go_to` awaits the coil writes
   and raises `HomeAssistantError` if refused (position untouched); only then is
   the `_track` task spawned.
+- **No UDP socket, no setup.** If port 4646 cannot be bound, `hub.async_setup`
+  raises `UdpBindError` -> `ConfigEntryNotReady` (HA retries). Never run without
+  the heartbeat: the PLC would resume its own program and fight HA.
+- **No Modbus read at startup while the PLC is offline.** Relays and inputs rely
+  on the resync run on reconnection; DALI/analog use
+  `WagoEntity.async_initial_read_when_online()`.
+- **KNX outputs**: write at `var + 6144` (never + 4096), read back at
+  `var + 6144 + 0x200`; use `helpers.output_address` / `readback_base`, and key
+  output resync watchers on the read-back base.
+- **Shutter reversal pause** (`COVER_REVERSE_DELAY`, 0.5 s) between opposite
+  directions; state written at most every `COVER_STATE_WRITE_INTERVAL` while
+  moving, always at the end.
+- **Stale-entity clean-up** (`_async_remove_stale_entities`) only after a
+  successful, NON-EMPTY io.xml import. Keep `expected_entities` in sync with the
+  platforms' unique_id scheme (`<host>_<io_id>`, per platform domain).
+- **The PLC host keys every unique_id.** It is not an option: it is changed only
+  through the Reconfigure step, which migrates entity unique_ids and the device
+  identifier (`config_flow.async_migrate_host`).
 - Input entities fire both an `event` entity update **and** a `wago2haddon_event`
   bus event; keep both (the bus event is the de-dup-proof automation path).
 
@@ -145,7 +166,12 @@ You cannot `import homeassistant.*` directly. Use these instead:
    bug you are looking for (this is exactly how the `device_info` bug slipped
    through once). When in doubt, confirm the symbol's real location in the HA source
    on GitHub.
-3. **Offline logic tests:** the HA-free modules (`const`, `models`, `modbus_tcp`,
+3. **Unit tests:** `pytest` (see `tests/`, run in CI). `tests/conftest.py` loads
+   the HA-free modules (`const`, `models`, `helpers`, `modbus_tcp`,
+   `input_decoder`, `calaos_import`) without executing `__init__.py`. Keep
+   new pure logic in those modules so it stays testable. `ruff check .` must
+   pass.
+4. **Offline logic tests:** the HA-free modules (`const`, `models`, `modbus_tcp`,
    `input_decoder`, `calaos_import`) can be copied into a throwaway package and
    tested directly — e.g. parse a real `io.xml`, check Modbus frame bytes, exercise
    the input decoder, and simulate the cover motor/Stop.
@@ -168,6 +194,8 @@ You cannot `import homeassistant.*` directly. Use these instead:
 - Add a `CHANGELOG.md` entry (English) and the `[x.y.z]` link at the bottom.
 - Push, then create a GitHub **release tagged exactly `x.y.z`** (no `v` prefix, must
   equal the manifest version). HACS uses tags to offer updates.
+- Versions must only ever increase (0.0.9 -> 0.1.0 -> ...). Never reuse the old
+  `1.0.x` numbering or publish malformed tags such as `1.090`.
 
 ## Source-of-truth references
 

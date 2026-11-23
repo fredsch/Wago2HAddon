@@ -48,7 +48,7 @@ class ModbusTcpClient:
                 asyncio.open_connection(self._host, self._port),
                 timeout=self._timeout,
             )
-        except (OSError, asyncio.TimeoutError) as err:
+        except (TimeoutError, OSError) as err:
             raise ModbusError(f"connect to {self._host}:{self._port} failed: {err}") from err
 
     async def close(self) -> None:
@@ -84,7 +84,7 @@ class ModbusTcpClient:
                 body = await asyncio.wait_for(
                     self._reader.readexactly(length - 1), timeout=self._timeout
                 )
-            except (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError) as err:
+            except (TimeoutError, OSError, asyncio.IncompleteReadError) as err:
                 await self.close()
                 raise ModbusError(f"transaction failed: {err}") from err
 

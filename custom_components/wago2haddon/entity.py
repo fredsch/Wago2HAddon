@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import callback
@@ -10,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN, RESYNC_GRACE
+from .helpers import readback_base
 from .hub import WagoHub
 from .models import DigitalOutput, WagoIO
 
@@ -57,6 +59,41 @@ class WagoEntity(Entity):
         # Re-publish so HA re-evaluates `available` (greys out / restores).
         self.async_write_ha_state()
 
+    async def _async_initial_read(self) -> None:
+        """Read the real state from the PLC once (override in subclasses)."""
+
+    async def async_initial_read_when_online(self) -> None:
+        """Run :meth:`_async_initial_read` now, or as soon as the PLC is online.
+
+        When the PLC is offline at startup, each read would wait for a
+        connection timeout, one entity after the other (the Modbus client is
+        serialized), which could stall Home Assistant's startup for minutes.
+        The read is therefore deferred to the moment the PLC comes back.
+        """
+        if self._hub.available:
+            await self._async_initial_read()
+            return
+
+        unsub: Callable[[], None] | None = None
+
+        @callback
+        def _on_availability(online: bool) -> None:
+            nonlocal unsub
+            if not online or unsub is None:
+                return
+            unsub()
+            unsub = None
+            self.hass.async_create_task(self._async_initial_read())
+
+        unsub = self._hub.register_availability(_on_availability)
+
+        @callback
+        def _cleanup() -> None:
+            if unsub is not None:
+                unsub()
+
+        self.async_on_remove(_cleanup)
+
 
 class WagoDigitalOutputEntity(WagoEntity):
     """Shared on/off logic for relay outputs (light and switch platforms).
@@ -71,16 +108,21 @@ class WagoDigitalOutputEntity(WagoEntity):
         self._io: DigitalOutput = io
         self._attr_is_on = False
         self._last_command = 0.0
+        # address the PLC is read back from (includes the KNX offset)
+        self._readback_var = readback_base(io.var, io.knx)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        state = await self._hub.read_digital_output(self._io.var)
-        if state is not None:
-            self._attr_is_on = state
-            self.async_write_ha_state()
         self.async_on_remove(
-            self._hub.register_output_state(self._io.var, self._on_resync)
+            self._hub.register_output_state(self._readback_var, self._on_resync)
         )
+        # Startup read only when the PLC is reachable: otherwise the hub
+        # resync that runs as soon as it comes back sets the real state.
+        if self._hub.available:
+            state = await self._hub.read_digital_output(self._readback_var)
+            if state is not None:
+                self._attr_is_on = state
+                self.async_write_ha_state()
 
     @callback
     def _on_resync(self, state: bool) -> None:
@@ -95,7 +137,7 @@ class WagoDigitalOutputEntity(WagoEntity):
     async def _async_set(self, value: bool) -> None:
         self._last_command = time.monotonic()
         if not await self._hub.set_digital_output(
-            self._io.var, self._io.wago_841, value
+            self._io.var, self._io.wago_841, value, self._io.knx
         ):
             raise HomeAssistantError(
                 f"{self.name}: the Wago PLC {self._hub.host} did not accept "

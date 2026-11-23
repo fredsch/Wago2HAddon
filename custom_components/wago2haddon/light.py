@@ -77,7 +77,13 @@ class WagoDaliLight(WagoEntity, LightEntity, RestoreEntity):
                     self._attr_brightness = int(brightness)
                 self.async_write_ha_state()
                 return
-        # 2) Otherwise, one-time initial read for genuine DALI addresses only.
+        # 2) Otherwise, one-time initial read for genuine DALI addresses only
+        #    (deferred until the PLC is online: no 2 s timeout per light).
+        if ch.address < 100:
+            await self.async_initial_read_when_online()
+
+    async def _async_initial_read(self) -> None:
+        ch = self._io.channel
         if ch.address < 100:
             res = await self._hub.dali_get(ch.line, ch.address)
             if res is not None:

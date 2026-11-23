@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Callable
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CMD_DALI_GET,
@@ -17,15 +18,21 @@ from .const import (
     CMD_HEARTBEAT,
     CMD_SET_SERVER_IP,
     DEFAULT_MONITOR_INTERVAL,
+    DOMAIN,
     MSG_INPUT_PREFIX,
     MODBUS_SLAVE_ID,
     OUTPUT_READBACK_OFFSET,
     RESYNC_MAX_SPAN,
-    WAGO_841_START_ADDRESS,
+    UDP_BIND_ATTEMPTS,
 )
+from .helpers import output_address, readback_addresses
 from .modbus_tcp import ModbusError, ModbusTcpClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class UdpBindError(Exception):
+    """The UDP listener port could not be bound."""
 
 
 def detect_local_ip(target: str) -> str | None:
@@ -122,7 +129,13 @@ class WagoHub:
 
     # -- lifecycle ------------------------------------------------------------
     async def async_setup(self) -> None:
-        """Open sockets, start heartbeat. Never raises on PLC being offline."""
+        """Open sockets and start the heartbeat.
+
+        Does not raise when the PLC is merely offline (Modbus unreachable), but
+        raises :class:`UdpBindError` when the UDP port cannot be bound: without
+        it no heartbeat can be sent, so the PLC would resume its internal
+        program while Home Assistant also drives the outputs.
+        """
         with contextlib.suppress(ModbusError):
             await self._modbus.connect()
             self.available = True
@@ -149,7 +162,8 @@ class WagoHub:
         # bind guarantees every packet reaches this one socket.
         self._udp_closed.clear()
         self._udp_transport = None
-        for attempt in range(6):
+        last_err: OSError | None = None
+        for attempt in range(UDP_BIND_ATTEMPTS):
             try:
                 self._udp_transport, _ = await loop.create_datagram_endpoint(
                     lambda: _UdpProtocol(self._handle_datagram, self._udp_closed.set),
@@ -159,15 +173,21 @@ class WagoHub:
             except OSError as err:
                 # Port still held by the previous socket during a reload; wait
                 # for it to be released, then retry.
-                _LOGGER.debug("UDP bind attempt %d/6 failed: %s", attempt + 1, err)
+                last_err = err
+                _LOGGER.debug(
+                    "UDP bind attempt %d/%d failed: %s",
+                    attempt + 1, UDP_BIND_ATTEMPTS, err,
+                )
                 await asyncio.sleep(0.5)
         if self._udp_transport is None:
-            _LOGGER.warning(
-                "Could not bind UDP port %d; input events and DALI state will be "
-                "unavailable, but Modbus control still works. Another process may "
-                "be using the port (a running Calaos server, or a previous "
-                "instance that did not release it).",
-                self.udp_port,
+            # Refuse to run half-way: no UDP socket means no heartbeat, so the
+            # PLC would resume its internal program and fight Home Assistant
+            # for the outputs. Home Assistant retries the setup automatically.
+            await self._modbus.close()
+            self.available = False
+            raise UdpBindError(
+                f"UDP port {self.udp_port} is already in use (a running Calaos "
+                f"server, or another program?): {last_err}"
             )
         self._heartbeat_task = loop.create_task(self._heartbeat_loop())
         self._monitor_task = loop.create_task(self._monitor_loop())
@@ -175,7 +195,7 @@ class WagoHub:
         # Best-effort: read the Calaos program version so it can be shown on the
         # device page. Non-blocking beyond a short timeout.
         if self.available:
-            self.sw_version = await self.get_version()
+            self.set_sw_version(await self.get_version())
 
         _LOGGER.info(
             "Wago hub %s ready (local_ip=%s, udp=%d, version=%s)",
@@ -268,9 +288,23 @@ class WagoHub:
             self.hass.async_create_task(self._refresh_version())
 
     async def _refresh_version(self) -> None:
-        version = await self.get_version()
-        if version:
-            self.sw_version = version
+        self.set_sw_version(await self.get_version())
+
+    @callback
+    def set_sw_version(self, version: str | None) -> None:
+        """Store the Calaos program version and push it to the device page.
+
+        The device page shows the version captured in DeviceInfo when the
+        entities were created; if it is only known later (PLC offline at
+        startup), the device registry must be updated explicitly.
+        """
+        if not version or version == self.sw_version:
+            return
+        self.sw_version = version
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(identifiers={(DOMAIN, self.host)})
+        if device is not None and device.sw_version != version:
+            registry.async_update_device(device.id, sw_version=version)
 
     # -- UDP ------------------------------------------------------------------
     def _udp_send(self, command: str) -> None:
@@ -456,8 +490,10 @@ class WagoHub:
             _LOGGER.debug("read_digital_input(%d) failed: %s", var, err)
             return None
 
-    async def set_digital_output(self, var: int, wago_841: bool, value: bool) -> bool:
-        addr = var + (WAGO_841_START_ADDRESS if wago_841 else 0)
+    async def set_digital_output(
+        self, var: int, wago_841: bool, value: bool, knx: bool = False
+    ) -> bool:
+        addr = output_address(var, wago_841, knx)
         try:
             await self._modbus.write_coil(addr, value)
             self._set_available(True)
@@ -468,8 +504,11 @@ class WagoHub:
             return False
 
     async def read_digital_output(self, var: int) -> bool | None:
-        """Read an output coil back (offset 0x200, fall back to raw var)."""
-        for addr in (var + OUTPUT_READBACK_OFFSET, var):
+        """Read an output coil back (offset 0x200, fall back to raw var).
+
+        ``var`` is the read-back base address (see ``helpers.readback_base``).
+        """
+        for addr in readback_addresses(var):
             try:
                 return await self._modbus.read_coil(addr)
             except ModbusError:
@@ -502,7 +541,7 @@ class WagoHub:
             self._udp_send(f"{CMD_DALI_GET} {line} {address}")
             try:
                 text = await asyncio.wait_for(fut, timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if fut in self._dali_pending:
                     self._dali_pending.remove(fut)
                 return None
@@ -525,7 +564,7 @@ class WagoHub:
             self._udp_send(CMD_GET_VERSION)
             try:
                 text = await asyncio.wait_for(fut, timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if fut in self._version_pending:
                     self._version_pending.remove(fut)
                 return None

@@ -12,7 +12,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, RESYNC_GRACE
+from .const import DOMAIN, RESYNC_GRACE, UID_CONNECTIVITY
 from .entity import WagoEntity
 from .hub import WagoHub
 from .models import DigitalInput, WagoIO
@@ -42,7 +42,7 @@ class WagoConnectivitySensor(WagoEntity, BinarySensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, hub: WagoHub) -> None:
-        io = WagoIO(io_id="connectivity", name="connectivité",
+        io = WagoIO(io_id=UID_CONNECTIVITY, name="connectivité",
                     io_type="connectivity", host=hub.host)
         super().__init__(hub, io)
         self._attr_name = f"Wago {hub.host} connectivité"
@@ -72,15 +72,17 @@ class WagoInputBinarySensor(WagoEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # initial read via Modbus (push updates arrive over UDP afterwards)
-        state = await self._hub.read_digital_input(self._io.var)
-        if state is not None:
-            self._attr_is_on = state
-            self.async_write_ha_state()
         self.async_on_remove(self._hub.register_input(self._io.var, self._on_edge))
         self.async_on_remove(
             self._hub.register_input_state(self._io.var, self._on_resync)
         )
+        # Initial read via Modbus only when the PLC is reachable; otherwise the
+        # hub resync run when it comes back sets the real state.
+        if self._hub.available:
+            state = await self._hub.read_digital_input(self._io.var)
+            if state is not None:
+                self._attr_is_on = state
+                self.async_write_ha_state()
 
     @callback
     def _on_edge(self, state: bool) -> None:
